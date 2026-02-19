@@ -8,12 +8,27 @@ During the experiments, the model was trained on the [**Animals-10**](https://ww
 
 ## 📁 Project Structure
 
-The project consists of two main artifacts located in the `src/` directory:
 ```
-src/
-├── optimizers_with_noise_experiments.ipynb — A Jupyter Notebook containing the full code for running experiments, analysis, and result visualization.
-└── report.pdf — A final report in PDF format presenting theoretical background, methodology description, result analysis, and conclusions.
+DL_Optimizers_Experiments/
+│
+├── experiment_notebooks/
+│   ├── first_experiments.ipynb
+│   ├── main_experiments.ipynb 
+│   └── first_results_report.pdf
+│
+├── src/      # Framework code (in progress)
+├── tests/
+│
+├── pyproject.toml
+├── requirements.txt
+└── requirements.dev.txt
 ```
+
+## ⚠️ Results Status
+
+`first_results_report.pdf` contains preliminary results from early experiment runs.
+
+Full updated benchmarks are not yet available due to limited GPU resources required for large-scale training.
 
 ## 🚀 How to Run the Experiments
 
@@ -21,19 +36,89 @@ To reproduce the results, follow the steps below. It is recommended to use **Goo
 
 ### 1. Environment Setup
 
-- **Open the notebook**: Upload and open the `src/optimizers_with_noise_experiments.ipynb` file in Google Colab.
+- **Open the notebook**: Upload and open the `experiment_notebooks/main_experiments.ipynb` file in Google Colab.
 - **Enable GPU**: In the menu, go to `Runtime -> Change runtime type` and set the hardware accelerator to **GPU**.
 
-### 2. Running the Notebook
+### 2. Execution Pipeline
 
-Execute the Jupyter Notebook cells in order:
+Run the notebook cells **in order**:
 
-- **Install dependencies and import libraries**: The initial cells install all required packages (`torch-optimizer`, `seedbank`, etc.) and import libraries.
-- **Download and prepare data**: This code block will automatically download the [Animals-10](https://www.kaggle.com/datasets/alessiocorrado99/animals10) dataset from Kaggle, unzip it, apply the necessary transformations, and split it into training, validation, and test sets.
-- **Define models and helper functions**: These cells define the CNN architecture and helper functions for training, evaluation, and visualization.
-- **Run experiments**: The main block will launch training loops for all noise scenarios and optimizers. This step is the most time-consuming and may take between **2 to 4 hours**.
-- **Analyze and visualize results**: The final cells process the collected data, save performance metrics, and generate all relevant plots for analysis.
+#### 1️⃣ Install dependencies  
+Install required libraries and initialize the environment.
+
+#### 2️⃣ Connect infrastructure  
+- Connect to **MLflow** for experiment tracking  
+- Mount virtual storage (e.g., Google Drive)
+
+#### 3️⃣ Download dataset  
+Download **Animals-10** from Kaggle and prepare raw data.
+
+#### 4️⃣ Initialize model & noise modules  
+- Create CNN model  
+- Define noise generators (Gaussian, Salt & Pepper)
+
+#### 5️⃣ Generate noisy datasets  
+Create noisy dataset variants and save them to virtual storage.
+
+#### 6️⃣ Load helper utilities  
+Load training loops, evaluation functions, and logging utilities.
+
+#### 7️⃣ Hyperparameter tuning (Optuna)  
+Run hyperparameter optimization for selected optimizers.
+
+#### 8️⃣ Run main experiment  
+- Load configuration file  
+- Execute training across optimizers and noise scenarios  
+- Log results to MLflow  
+
+---
+
+### Configuration File (Example)
+
+Before running the main experiment, load a YAML configuration file.
+
+Example (simplified):
+
+```yaml
+mlflow:
+  experiment_name: "SimpleCNN_Animals10"
+
+data:
+  dataset_name: "Animals10"
+  num_classes: 10
+
+model:
+  name: "SimpleCNN"
+
+training:
+  epochs: 12
+  batch_size: 64
+  learning_rate: 0.001
+  num_runs: 3
+
+grid_search:
+  optimizers:
+    - name: "SGD"
+      params:
+        momentum: 0.9
+
+  noise_scenarios:
+    no_noise: []
+    gaussian_0.05:
+      - name: "GaussianNoiseAdder"
+        params:
+          std: 0.05
+    salt_pepper_0.03:
+      - name: "SaltAndPepperNoiseAdder"
+        params:
+          amount: 0.03
+```
+
 
 ### 3. Viewing the Results
 
-After completing the notebook, all graphs and result tables will be displayed in the output cells. A detailed analysis and conclusions are available in the file `src/report.pdf`.
+After execution:
+
+- A results file with collected metrics is generated
+- Summary tables are displayed in the notebook
+- All runs are logged to MLflow

@@ -1,7 +1,37 @@
-[metadata]
-name = "DL_Optimizers_Experiments"
-author = "irinszn"
-url = "https://github.com/irinszn/DL_Optimizers_Experiments.git"
+[project]
+name = "dl-optimizers-experiments"
+version = "0.1.0"
+requires-python = ">=3.11"
+authors = [{ name = "irinszn" }]
+dependencies = [
+    "torch",
+    "torchvision",
+    "torch-optimizer",
+    "mlflow",
+    "optuna",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "tabulate",
+    "tqdm",
+    "pyyaml",
+    "pillow",
+    "numpy",
+    "seedbank",
+    "pyngrok",
+]
+
+[project.urls]
+repository = "https://github.com/irinszn/DL_Optimizers_Experiments.git"
+
+[dependency-groups]
+dev = [
+    "black==23.11.0",
+    "mypy==1.14.1",
+    "pytest==8.3.4",
+    "isort==5.12.0",
+    "hypothesis==6.115.6",
+]
 
 [tool.isort]
 profile = "black"

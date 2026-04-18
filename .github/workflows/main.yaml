@@ -7,18 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: 3.13
-          cache: "pip"
+          enable-cache: true
       - name: "installation"
-        run: |
-          pip install -r requirements.txt -r requirements.dev.txt
+        run: uv sync --dev
       - name: "black"
-        run: black . --check --diff --color
+        run: uv run black . --check --diff --color
       - name: "isort"
-        run: isort . --check --diff
+        run: uv run isort . --check --diff
       - name: "mypy"
-        run: mypy
+        run: uv run mypy
       - name: "pytests"
-        run: python -m pytest
+        run: uv run pytest

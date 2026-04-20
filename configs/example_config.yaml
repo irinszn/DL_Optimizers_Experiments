@@ -1,0 +1,46 @@
+mlflow:
+  experiment_name: "{model_name}_{dataset_name}"  # Название эксперимента для MLflow
+
+data:
+  dataset_name: "YourDataset"                          # Название датасета
+  clean_data_path: "path/to/raw/data"                  # Путь к исходным изображениям
+  preprocessed_root_path: "path/to/preprocessed/data"  # Куда сохранять зашумлённые датасеты
+  scenario_folder_template: "YourDataset_{scenario_name}" # Шаблон для названий папок с зашумленными данными
+  num_classes: 10                                       # Количество классов в исходном датасете
+  debug_subset_size: 100                             # Для быстрого прогона экспериментов (можно удалить)
+
+model:
+  name: "SimpleCNN"   # Имя модели из MODEL_REGISTRY в run.py
+  params:
+    num_classes: 10
+
+training:
+  epochs: 12
+  batch_size: 64
+  learning_rate: 0.001
+  target_loss: 0.4    # Целевой лосс для фиксирования времени сходимости
+  criterion: "CrossEntropyLoss"
+  num_runs: 3         # Количество запусков для усреднения результатов
+  save_model_mode: "best"  # best — сохранить лучшую модель, all — все, none — не сохранять
+
+grid_search:
+  optimizers:
+    - name: "SGD"     # Имя оптимизатора из OPTIMIZER_REGISTRY в run.py
+      params:
+        momentum: 0.9
+    - name: "Adam"
+      params: {}
+    # - name: "LAMB"  # Можно добавить другие оптимизаторы с параметрами
+    #   params: {}
+
+  noise_scenarios:
+    no_noise: []            # Чистые данные (обязательный сценарий)
+    gaussian_0.05:          # Название сценария
+      - name: "GaussianNoiseAdder"    # Имя класса из NOISE_REGISTRY в run.py
+        params:
+          mean: 0.0
+          std: 0.05
+    salt_pepper_0.03:
+      - name: "SaltAndPepperNoiseAdder"
+        params:
+          amount: 0.03

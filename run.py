@@ -3,7 +3,7 @@ import torch.optim as optim
 from src.data.noises import GaussianNoiseAdder, SaltAndPepperNoiseAdder
 from src.experiment.robustness import run_comparative_robustness_evaluation
 from src.experiment.runner import ExperimentRunner
-from src.models.cnn import SimpleCNN
+from src.models.simple_cnn import SimpleCNN
 
 MODEL_REGISTRY = {
     "SimpleCNN": SimpleCNN,

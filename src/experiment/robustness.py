@@ -13,6 +13,15 @@ from src.training.evaluate import evaluate_model
 
 
 def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name: str) -> Optional[str]:
+    """
+    Finds the URI of the best model by searching through the run history.
+
+    Can work with:
+    1. save_mode='best' (searches for the model in the Parent Run using the best_run_val_accuracy metric).
+    2. save_mode='all' (searches for the best Child Run).
+    3. Situations where the last run crashed or produced a poor result
+       (the function will automatically search previous runs).
+    """
     print(f"Searching for best model for '{optimizer_name}_{scenario_name}'...")
 
     client = MlflowClient()
@@ -65,6 +74,7 @@ def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name
 
 
 def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: dict[str, Any]) -> None:
+    """Evaluates and compares the robustness of the best models across all noise scenarios."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 

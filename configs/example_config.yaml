@@ -1,16 +1,16 @@
 mlflow:
-  experiment_name: "{model_name}_{dataset_name}"  # Название эксперимента для MLflow
+  experiment_name: "{model_name}_{dataset_name}"  # MLflow experiment name
 
 data:
-  dataset_name: "YourDataset"                          # Название датасета
-  clean_data_path: "path/to/raw/data"                  # Путь к исходным изображениям
-  preprocessed_root_path: "path/to/preprocessed/data"  # Куда сохранять зашумлённые датасеты
-  scenario_folder_template: "YourDataset_{scenario_name}" # Шаблон для названий папок с зашумленными данными
-  num_classes: 10                                       # Количество классов в исходном датасете
-  debug_subset_size: 100                             # Для быстрого прогона экспериментов (можно удалить)
+  dataset_name: "YourDataset"                          # Dataset name
+  clean_data_path: "path/to/raw/data"                  # Path to raw images
+  preprocessed_root_path: "path/to/preprocessed/data"  # Where to save noisy datasets
+  scenario_folder_template: "YourDataset_{scenario_name}" # Template for noisy dataset folder names
+  num_classes: 10                                       # Number of classes in the dataset
+  debug_subset_size: 100                                # For quick test runs (can be removed)
 
 model:
-  name: "SimpleCNN"   # Имя модели из MODEL_REGISTRY в run.py
+  name: "SimpleCNN"   # Model name from MODEL_REGISTRY in run.py
   params:
     num_classes: 10
 
@@ -18,25 +18,25 @@ training:
   epochs: 12
   batch_size: 64
   learning_rate: 0.001
-  target_loss: 0.4    # Целевой лосс для фиксирования времени сходимости
+  target_loss: 0.4    # Target loss for convergence time tracking
   criterion: "CrossEntropyLoss"
-  num_runs: 3         # Количество запусков для усреднения результатов
-  save_model_mode: "best"  # best — сохранить лучшую модель, all — все, none — не сохранять
+  num_runs: 3         # Number of runs for averaging results
+  save_model_mode: "best"  # best — save best model, all — save all, none — don't save
 
 grid_search:
   optimizers:
-    - name: "SGD"     # Имя оптимизатора из OPTIMIZER_REGISTRY в run.py
+    - name: "SGD"     # Optimizer name from OPTIMIZER_REGISTRY in run.py
       params:
         momentum: 0.9
     - name: "Adam"
       params: {}
-    # - name: "LAMB"  # Можно добавить другие оптимизаторы с параметрами
+    # - name: "LAMB"  # Add more optimizers with params as needed
     #   params: {}
 
   noise_scenarios:
-    no_noise: []            # Чистые данные (обязательный сценарий)
-    gaussian_0.05:          # Название сценария
-      - name: "GaussianNoiseAdder"    # Имя класса из NOISE_REGISTRY в run.py
+    no_noise: []            # Clean data (required scenario)
+    gaussian_0.05:          # Scenario name
+      - name: "GaussianNoiseAdder"    # Class name from NOISE_REGISTRY in run.py
         params:
           mean: 0.0
           std: 0.05

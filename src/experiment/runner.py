@@ -18,6 +18,8 @@ from src.utils import set_random_seed
 
 
 class ExperimentRunner:
+    """A class for managing, running, and logging experiments based on a given configuration."""
+
     def __init__(
         self,
         config_path: str,
@@ -25,6 +27,15 @@ class ExperimentRunner:
         noise_registry: dict[str, type],
         optimizer_registry: dict[str, type],
     ) -> None:
+        """
+        Initializes ExperimentRunner.
+
+        Args:
+            config_path: Path to the YAML configuration file.
+            model_registry: Dictionary of available model classes.
+            noise_registry: Dictionary with available noise/transformation classes.
+            optimizer_registry: Dictionary of available optimizer classes.
+        """
         self.config_path = config_path
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
@@ -37,6 +48,7 @@ class ExperimentRunner:
         self._setup_mlflow()
 
     def _setup_mlflow(self) -> None:
+        """Sets up an experiment in MLflow."""
         exp_name_template = self.config["mlflow"]["experiment_name"]
         experiment_name = exp_name_template.format(
             model_name=self.config["model"]["name"],
@@ -46,11 +58,13 @@ class ExperimentRunner:
         print(f"MLflow experiment set to: '{experiment_name}'")
 
     def _get_model(self) -> nn.Module:
+        """Creates and returns an instance of the model according to the config."""
         model_name = self.config["model"]["name"]
         model_params = self.config["model"].get("params", {})
         return self.model_registry[model_name](**model_params).to(self.device)
 
     def _get_criterion(self) -> nn.Module:
+        """Creates and returns a loss function."""
         return getattr(nn, self.config["training"]["criterion"])()
 
     def _run_single_experiment(
@@ -61,6 +75,7 @@ class ExperimentRunner:
         criterion: nn.Module,
         run_seeds: np.ndarray,
     ) -> dict[str, Any]:
+        """Performs one full experiment (optimizer + scenario) with N runs."""
         run_results_list = []
         training_params = self.config["training"]
         save_mode = training_params.get("save_model_mode", "best")
@@ -201,6 +216,7 @@ class ExperimentRunner:
             return aggregated_metrics
 
     def run(self) -> None:
+        """Launches the entire grid of experiments."""
         print(f"The experiment is running on the device: {self.device}")
 
         criterion = self._get_criterion()

@@ -13,6 +13,10 @@ from tqdm import tqdm
 
 
 def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
+    """
+    Scans Google Drive and creates only noisy datasets that don't yet exist.
+    Generates locally first (fast), then uploads only missing scenarios.
+    """
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
@@ -85,6 +89,30 @@ def get_dataloaders_from_drive(
     batch_size: int,
     subset_size: int = None,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Loads a preprocessed dataset from Google Drive based on a scenario name,
+    splits it into training, validation, and test sets, and returns their respective DataLoaders.
+
+    Args:
+        preprocessed_root_path (str): The path to the root directory where all
+                                      preprocessed datasets are stored.
+        scenario_folder_template (str): A format string for the scenario subfolder name,
+                                        e.g., 'Animals10_{scenario_name}'.
+        scenario_name (str): The specific name of the scenario to load,
+                             e.g., 'gaussian_0.03'.
+        random_state (int): The seed for the random number generator to ensure
+                            reproducible train/val/test splits.
+        batch_size (int): The number of samples per batch to load.
+        subset_size (int, optional): If specified, a random subset of this size
+                                     is used instead of the full dataset.
+                                     Defaults to None (using the full dataset).
+
+    Returns:
+        A tuple containing three DataLoader objects: (train_loader, val_loader, test_loader).
+
+    Raises:
+        FileNotFoundError: If the directory for the specified scenario does not exist.
+    """
     scenario_folder_name = scenario_folder_template.format(scenario_name=scenario_name)
     data_path = os.path.join(preprocessed_root_path, scenario_folder_name)
 

@@ -21,6 +21,17 @@ class HyperparameterTuner:
         criterion: nn.Module = None,
         epochs_per_trial: int = 12,
     ):
+        """
+        Initializes the tuner.
+
+        Args:
+            model_class: Model class.
+            optimizer_name (str): Name of the optimizer for selection ('SGD', 'Adam', 'LAMB').
+            train_loader: DataLoader for train data.
+            val_loader: DataLoader for validation data.
+            criterion: Loss function.
+            epochs_per_trial (int): Number of epochs for one trial.
+        """
         self.model_class = model_class
         self.model_params = model_params
         self.train_loader = train_loader
@@ -45,6 +56,7 @@ class HyperparameterTuner:
         print(f"The tuner is configured to select parameters for {self.optimizer_name}")
 
     def _suggest_sgd_params(self, trial: optuna.Trial) -> dict:
+        """Search space for SGD."""
         return {
             "lr": 10 ** trial.suggest_float("lr_log10", -4, 0),
             "momentum": trial.suggest_float("momentum", 0.5, 0.99),
@@ -54,6 +66,7 @@ class HyperparameterTuner:
         }
 
     def _suggest_adam_params(self, trial: optuna.Trial) -> dict:
+        """Search space for Adam."""
         return {
             "lr": 10 ** trial.suggest_float("lr_log10", -5, -2),
             "betas": (trial.suggest_float("adam_beta1", 0.8, 0.99), trial.suggest_float("adam_beta2", 0.9, 0.999)),
@@ -61,6 +74,7 @@ class HyperparameterTuner:
         }
 
     def _suggest_lamb_params(self, trial: optuna.Trial) -> dict:
+        """Search space for LAMB."""
         return {
             "lr": 10 ** trial.suggest_float("lr_log10", -4, -1),
             "betas": (trial.suggest_float("lamb_beta1", 0.8, 0.99), trial.suggest_float("lamb_beta2", 0.9, 0.999)),
@@ -95,6 +109,14 @@ class HyperparameterTuner:
         return evaluate_model(model, self.val_loader, self.device)["accuracy"]
 
     def tune(self, n_trials: int = 100, direction: str = "maximize", timeout: int = None) -> optuna.Study:
+        """
+        Starts the hyperparameter selection process.
+
+        Args:
+            n_trials: Number of selection iterations.
+            direction: Optimization direction ("maximize" or "minimize").
+            timeout: Maximum time for selection in seconds.
+        """
         study = optuna.create_study(direction=direction)
         study.optimize(self.objective, n_trials=n_trials, timeout=timeout)
 

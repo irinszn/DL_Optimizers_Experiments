@@ -7,6 +7,25 @@ from tabulate import tabulate
 
 
 def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Calculates aggregated metrics over a list of results.
+
+    Returns:
+        A dictionary with the full structure of calculated metrics. Example:
+        {
+            'runs_count': 3,
+            'validation_metrics': { ... },
+            'test_metrics': {
+                'accuracy': {
+                    'mean': 92.33,
+                    'ci_95': (91.4, 93.2),
+                    'formatted': "92.33 (91.40, 93.20)"
+                },
+                'f1_score': { ... }
+            },
+            'mean_time_s': 111.23
+        }
+    """
     if not run_results_list:
         return {}
 
@@ -59,6 +78,7 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
 
 
 def generate_summary_table(data: list[dict]) -> None:
+    """Prints the resulting pivot table to the console."""
     print("\n\n" + "=" * 100)
     print(" " * 40 + "FINAL SUMMARY TABLE")
     print("=" * 100)
@@ -72,6 +92,7 @@ def generate_summary_table(data: list[dict]) -> None:
 
 
 def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_summary.csv") -> None:
+    """Saves a complete summary of experiments to a CSV file."""
     if not summary_data:
         print("There is no data to save to CSV.")
         return

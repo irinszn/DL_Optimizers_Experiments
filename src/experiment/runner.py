@@ -14,7 +14,7 @@ from src.data.processing import get_dataloaders_from_drive
 from src.experiment.metrics import calculate_aggregated_metrics, generate_summary_table, save_summary_to_csv
 from src.training.evaluate import evaluate_model
 from src.training.train import train_one_epoch
-from src.utils import set_random_seed
+from src.utils import SPLIT_RANDOM_STATE, set_random_seed
 
 
 class ExperimentRunner:
@@ -99,7 +99,7 @@ class ExperimentRunner:
                 preprocessed_root_path=self.config["data"]["preprocessed_root_path"],
                 scenario_folder_template=self.config["data"]["scenario_folder_template"],
                 scenario_name=scenario_name,
-                random_state=42,
+                random_state=SPLIT_RANDOM_STATE,
                 batch_size=self.config["training"]["batch_size"],
                 subset_size=self.config["data"].get("debug_subset_size"),
             )

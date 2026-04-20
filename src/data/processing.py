@@ -94,16 +94,16 @@ def get_dataloaders_from_drive(
     splits it into training, validation, and test sets, and returns their respective DataLoaders.
 
     Args:
-        preprocessed_root_path (str): The path to the root directory where all
+        preprocessed_root_path: The path to the root directory where all
                                       preprocessed datasets are stored.
-        scenario_folder_template (str): A format string for the scenario subfolder name,
+        scenario_folder_template: A format string for the scenario subfolder name,
                                         e.g., 'Animals10_{scenario_name}'.
-        scenario_name (str): The specific name of the scenario to load,
+        scenario_name: The specific name of the scenario to load,
                              e.g., 'gaussian_0.03'.
-        random_state (int): The seed for the random number generator to ensure
+        random_state: The seed for the random number generator to ensure
                             reproducible train/val/test splits.
-        batch_size (int): The number of samples per batch to load.
-        subset_size (int, optional): If specified, a random subset of this size
+        batch_size: The number of samples per batch to load.
+        subset_size: If specified, a random subset of this size
                                      is used instead of the full dataset.
                                      Defaults to None (using the full dataset).
 
@@ -133,7 +133,8 @@ def get_dataloaders_from_drive(
     if subset_size:
         print(f"    - DEBUG MODE: Running on a slice of {subset_size} / {len(full_dataset)} samples\n")
         subset_size = min(subset_size, len(full_dataset))
-        indices = list(range(subset_size))
+        rng = np.random.default_rng(random_state)
+        indices = rng.choice(len(full_dataset), size=subset_size, replace=False).tolist()
         full_dataset = Subset(full_dataset, indices)
 
     train_val_size = int(0.8 * len(full_dataset))

@@ -3,6 +3,8 @@ import random
 import numpy as np
 import torch
 
+SPLIT_RANDOM_STATE = 42
+
 
 def set_random_seed(seed: int) -> None:
     """

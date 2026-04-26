@@ -7,10 +7,10 @@ import mlflow.pytorch
 import numpy as np
 import torch
 import torch.nn as nn
-import yaml
 from mlflow.models import infer_signature
 
-from src.data.processing import get_dataloaders_from_drive
+from src.config import ExperimentConfig, OptimizerConfig, load_config
+from src.data.processing import get_dataloaders
 from src.experiment.metrics import calculate_aggregated_metrics, generate_summary_table, save_summary_to_csv
 from src.training.evaluate import evaluate_model
 from src.training.train import train_one_epoch
@@ -36,10 +36,7 @@ class ExperimentRunner:
             noise_registry: Dictionary with available noise/transformation classes.
             optimizer_registry: Dictionary of available optimizer classes.
         """
-        self.config_path = config_path
-        with open(config_path, "r") as f:
-            self.config = yaml.safe_load(f)
-
+        self.config: ExperimentConfig = load_config(config_path)
         self.model_registry = model_registry
         self.noise_registry = noise_registry
         self.optimizer_registry = optimizer_registry
@@ -49,59 +46,56 @@ class ExperimentRunner:
 
     def _setup_mlflow(self) -> None:
         """Sets up an experiment in MLflow."""
-        exp_name_template = self.config["mlflow"]["experiment_name"]
-        experiment_name = exp_name_template.format(
-            model_name=self.config["model"]["name"],
-            dataset_name=self.config["data"]["dataset_name"],
+        experiment_name = self.config.mlflow.experiment_name.format(
+            model_name=self.config.model.name,
+            dataset_name=self.config.data.dataset_name,
         )
         mlflow.set_experiment(experiment_name)
         print(f"MLflow experiment set to: '{experiment_name}'")
 
     def _get_model(self) -> nn.Module:
         """Creates and returns an instance of the model according to the config."""
-        model_name = self.config["model"]["name"]
-        model_params = self.config["model"].get("params", {})
-        return self.model_registry[model_name](**model_params).to(self.device)
+        return self.model_registry[self.config.model.name](**self.config.model.params).to(self.device)
 
     def _get_criterion(self) -> nn.Module:
         """Creates and returns a loss function."""
-        return getattr(nn, self.config["training"]["criterion"])()
+        return getattr(nn, self.config.training.criterion)()
 
     def _run_single_experiment(
         self,
         base_run_name: str,
         scenario_name: str,
-        opt_config: dict,
+        opt_config: OptimizerConfig,
         criterion: nn.Module,
         run_seeds: np.ndarray,
     ) -> dict[str, Any]:
         """Performs one full experiment (optimizer + scenario) with N runs."""
         run_results_list = []
-        training_params = self.config["training"]
-        save_mode = training_params.get("save_model_mode", "best")
-        num_runs = training_params.get("num_runs", 1)
-        opt_name = opt_config["name"]
-        target_loss = training_params.get("target_loss", 0.3)
+        training = self.config.training
+        save_mode = training.save_model_mode
+        num_runs = training.num_runs
 
         print(f"\n--- Running {base_run_name} ({num_runs} times) ---")
 
         with mlflow.start_run(run_name=base_run_name) as parent_run:
-            mlflow.log_params(self.config["model"]["params"])
-            mlflow.log_params(opt_config["params"])
-            mlflow.log_param("optimizer_name", opt_name)
+            mlflow.log_params(self.config.model.params)
+            mlflow.log_params(opt_config.params)
+            mlflow.log_param("optimizer_name", opt_config.name)
             mlflow.log_param("num_runs", num_runs)
 
             best_overall_run_accuracy = -1.0
             best_overall_model_state = None
             best_run_index = -1
 
-            train_loader, val_loader, test_loader = get_dataloaders_from_drive(
-                preprocessed_root_path=self.config["data"]["preprocessed_root_path"],
-                scenario_folder_template=self.config["data"]["scenario_folder_template"],
+            train_loader, val_loader, test_loader = get_dataloaders(
+                preprocessed_root_path=self.config.data.preprocessed_root_path,
+                scenario_folder_template=self.config.data.scenario_folder_template,
                 scenario_name=scenario_name,
                 random_state=SPLIT_RANDOM_STATE,
-                batch_size=self.config["training"]["batch_size"],
-                subset_size=self.config["data"].get("debug_subset_size"),
+                batch_size=training.batch_size,
+                num_workers=self.config.data.num_workers,
+                pin_memory=self.config.data.pin_memory,
+                subset_size=self.config.data.debug_subset_size,
             )
 
             input_example = next(iter(train_loader))[0][:1].cpu().numpy()
@@ -113,32 +107,60 @@ class ExperimentRunner:
                     set_random_seed(int(run_seed))
 
                     model = self._get_model()
-                    optimizer_class = self.optimizer_registry[opt_name]
+                    optimizer_class = self.optimizer_registry[opt_config.name]
                     optimizer = optimizer_class(
                         model.parameters(),
-                        lr=training_params["learning_rate"],
-                        **opt_config["params"],
+                        lr=training.learning_rate,
+                        **opt_config.params,
                     )
 
                     val_metrics_history = []
                     convergence_time: float = -1.0
                     start_time = time.time()
 
-                    for epoch in range(training_params["epochs"]):
+                    epochs_without_improvement = 0
+                    best_val_accuracy = -1.0
+                    best_epoch = 0
+                    best_model_state = None
+
+                    for epoch in range(training.epochs):
                         epoch_loss = train_one_epoch(model, optimizer, criterion, train_loader, self.device)
                         val_metrics = evaluate_model(model, val_loader, self.device)
                         val_metrics_history.append(val_metrics)
 
-                        if epoch_loss <= target_loss and convergence_time < 0:
+                        if epoch_loss <= training.target_loss and convergence_time < 0:
                             convergence_time = time.time() - start_time
 
                         mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
                         for name, value in val_metrics.items():
                             mlflow.log_metric(f"val_{name}", value, step=epoch)
 
+                        current_val_accuracy = val_metrics.get("accuracy", 0)
+                        if current_val_accuracy > best_val_accuracy:
+                            best_val_accuracy = current_val_accuracy
+                            best_epoch = epoch + 1
+                            best_model_state = copy.deepcopy(model.state_dict())
+                            epochs_without_improvement = 0
+                        else:
+                            epochs_without_improvement += 1
+                            if (
+                                training.early_stopping_patience > 0
+                                and epochs_without_improvement >= training.early_stopping_patience
+                            ):
+                                print(
+                                    f"    - Early stopping at epoch {epoch + 1} (no improvement for {training.early_stopping_patience} epochs)"
+                                )
+                                mlflow.log_metric("stopped_epoch", epoch + 1)
+                                break
+
                     total_time = time.time() - start_time
                     time_to_log = convergence_time if convergence_time > 0 else total_time
                     mlflow.log_metric("convergence_time", time_to_log)
+                    mlflow.log_metric("best_epoch", best_epoch)
+                    mlflow.log_metric("best_val_accuracy", best_val_accuracy)
+
+                    if best_model_state is not None:
+                        model.load_state_dict(best_model_state)
 
                     test_metrics = evaluate_model(model, test_loader, self.device)
                     run_results_list.append(
@@ -150,17 +172,15 @@ class ExperimentRunner:
                     )
 
                     mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
-
-                    final_run_val_accuracy = val_metrics_history[-1].get("accuracy", 0) if val_metrics_history else 0
-                    mlflow.log_metric("final_val_accuracy", final_run_val_accuracy)
+                    mlflow.log_metric("final_val_accuracy", best_val_accuracy)
 
                     if save_mode == "all":
-                        print(f"    - Saving the model (Val Acc: {final_run_val_accuracy:.2f}%)")
+                        print(f"    - Saving the model (Val Acc: {best_val_accuracy:.2f}%)")
                         mlflow.pytorch.log_model(model, name="final_model", signature=signature)
 
-                    if save_mode == "best" and final_run_val_accuracy > best_overall_run_accuracy:
-                        print(f"    - A new best launch has been found (Val Acc: {final_run_val_accuracy:.2f}%)")
-                        best_overall_run_accuracy = final_run_val_accuracy
+                    if save_mode == "best" and best_val_accuracy > best_overall_run_accuracy:
+                        print(f"    - A new best launch has been found (Val Acc: {best_val_accuracy:.2f}%)")
+                        best_overall_run_accuracy = best_val_accuracy
                         best_run_index = i + 1
                         best_overall_model_state = copy.deepcopy(model.state_dict())
 
@@ -221,16 +241,15 @@ class ExperimentRunner:
 
         criterion = self._get_criterion()
         summary_data_full = []
-        num_runs = self.config["training"].get("num_runs", 1)
 
-        run_seeds = np.random.randint(0, 2**32 - 1, size=num_runs)
+        run_seeds = np.random.randint(0, 2**32 - 1, size=self.config.training.num_runs)
         print(f"\nGenerated seeds: {run_seeds}\n")
 
-        for scenario_name in self.config["grid_search"]["noise_scenarios"]:
+        for scenario_name in self.config.grid_search.noise_scenarios:
             print(f"\n{'=' * 80}\nSCENARIO: {scenario_name}\n{'=' * 80}")
 
-            for opt_config in self.config["grid_search"]["optimizers"]:
-                base_run_name = f"{opt_config['name']}_{scenario_name}"
+            for opt_config in self.config.grid_search.optimizers:
+                base_run_name = f"{opt_config.name}_{scenario_name}"
                 run_results = self._run_single_experiment(
                     base_run_name, scenario_name, opt_config, criterion, run_seeds
                 )
@@ -238,8 +257,8 @@ class ExperimentRunner:
                 summary_data_full.append(
                     {
                         "experiment": base_run_name,
-                        "hyperparams": str(opt_config.get("params", "default")),
-                        "epochs_num": self.config["training"]["epochs"],
+                        "hyperparams": str(opt_config.params),
+                        "epochs_num": self.config.training.epochs,
                         "mean_time_s": run_results.get("mean_time_s", 0),
                         "time_std_s": run_results.get("time_std_s", 0),
                         "full_metrics": run_results.get("test_metrics", {}),

@@ -4,12 +4,13 @@ import mlflow
 import mlflow.pytorch
 import pandas as pd
 import torch
-import yaml
 from mlflow.tracking import MlflowClient
 from tqdm import tqdm
 
-from src.data.processing import get_dataloaders_from_drive
+from src.config import load_config
+from src.data.processing import get_dataloaders
 from src.training.evaluate import evaluate_model
+from src.utils import SPLIT_RANDOM_STATE
 
 
 def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name: str) -> Optional[str]:
@@ -75,17 +76,16 @@ def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name
 
 def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: dict[str, Any]) -> None:
     """Evaluates and compares the robustness of the best models across all noise scenarios."""
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    config = load_config(config_path)
 
-    experiment_name = config["mlflow"]["experiment_name"].format(
-        model_name=config["model"]["name"],
-        dataset_name=config["data"]["dataset_name"],
+    experiment_name = config.mlflow.experiment_name.format(
+        model_name=config.model.name,
+        dataset_name=config.data.dataset_name,
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     optimizers_to_compare = list(optimizer_registry.keys())
-    scenario_trained_on = list(config["grid_search"]["noise_scenarios"].keys())[0]
+    scenario_trained_on = config.robustness.trained_on_scenario
 
     print(f"Starting comparative robustness evaluation for optimizers: {optimizers_to_compare}")
 
@@ -114,15 +114,17 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
             print(f"ERROR: Failed to load model for '{optimizer_name}'. Skipping. Error: {e}")
             continue
 
-        for scenario_name in tqdm(config["grid_search"]["noise_scenarios"], desc=f"Evaluating {optimizer_name}"):
+        for scenario_name in tqdm(config.grid_search.noise_scenarios, desc=f"Evaluating {optimizer_name}"):
             try:
-                _, _, test_loader = get_dataloaders_from_drive(
-                    preprocessed_root_path=config["data"]["preprocessed_root_path"],
-                    scenario_folder_template=config["data"]["scenario_folder_template"],
+                _, _, test_loader = get_dataloaders(
+                    preprocessed_root_path=config.data.preprocessed_root_path,
+                    scenario_folder_template=config.data.scenario_folder_template,
                     scenario_name=scenario_name,
-                    random_state=42,
-                    batch_size=config["training"]["batch_size"],
-                    subset_size=config["data"].get("debug_subset_size"),
+                    random_state=SPLIT_RANDOM_STATE,
+                    batch_size=config.training.batch_size,
+                    num_workers=config.data.num_workers,
+                    pin_memory=config.data.pin_memory,
+                    subset_size=config.data.debug_subset_size,
                 )
                 with torch.no_grad():
                     metrics = evaluate_model(model, test_loader, device)
@@ -141,7 +143,7 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
 
     try:
         pivot_df = results_df.pivot_table(index="test_scenario", columns="optimizer", values="accuracy")
-        desired_order = list(config["grid_search"]["noise_scenarios"].keys())
+        desired_order = list(config.grid_search.noise_scenarios.keys())
         pivot_df = pivot_df.reindex([s for s in desired_order if s in pivot_df.index])
 
         print("\n\n" + "=" * 80)

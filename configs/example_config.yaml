@@ -7,7 +7,9 @@ data:
   preprocessed_root_path: "path/to/preprocessed/data"  # Where to save noisy datasets
   scenario_folder_template: "YourDataset_{scenario_name}" # Template for noisy dataset folder names
   num_classes: 10                                       # Number of classes in the dataset
-  debug_subset_size: 100                                # For quick test runs (can be removed)
+  num_workers: 2                                         # Number of DataLoader worker processes
+  pin_memory: false                                      # Set to true if running on GPU
+  debug_subset_size: 100                                 # For quick test runs (can be removed)
 
 model:
   name: "SimpleCNN"   # Model name from MODEL_REGISTRY in run.py
@@ -22,6 +24,10 @@ training:
   criterion: "CrossEntropyLoss"
   num_runs: 3         # Number of runs for averaging results
   save_model_mode: "best"  # best — save best model, all — save all, none — don't save
+  early_stopping_patience: 3  # stop if val accuracy doesn't improve for N epochs (0 to disable)
+
+robustness:
+  trained_on_scenario: "no_noise"  # Scenario used to train the reference model for robustness evaluation
 
 grid_search:
   optimizers:

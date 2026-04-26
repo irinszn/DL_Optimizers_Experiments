@@ -1,112 +1,126 @@
 # Comparison of Optimizers under Noisy Data Conditions
 
-This study is dedicated to the experimental analysis and comparison of the **accuracy and robustness** of three popular optimization algorithms — **SGD**, **Adam**, and **LAMB** — under noisy data conditions. The main goal of this work is to determine which optimization strategy (classical or adaptive) enables a **Convolutional Neural Network (CNN)** to better maintain its accuracy when trained on data with different types and levels of distortion.
+An experimental study comparing the **accuracy and robustness** of three optimization algorithms — **SGD**, **Adam**, and **LAMB** — under noisy data conditions. The goal is to determine which optimization strategy better maintains CNN accuracy when trained on data with different types and levels of distortion.
 
-During the experiments, the model was trained on the [**Animals-10**](https://www.kaggle.com/datasets/alessiocorrado99/animals10) dataset, into which **Gaussian noise** and **Salt&Pepper noise** were artificially introduced at varying intensities. Model accuracy and performance were evaluated on a clean test set using multiple metrics, including **Accuracy**, **Precision**, **Recall**, **F1-score**, as well as the **convergence time** to a target loss level.
+Experiments are conducted on the [Animals-10](https://www.kaggle.com/datasets/alessiocorrado99/animals10) dataset with artificially introduced **Gaussian** and **Salt & Pepper** noise at varying intensities. Models are evaluated using **Accuracy**, **Precision**, **Recall**, **F1-score**, and **convergence time**.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 DL_Optimizers_Experiments/
 │
+├── configs/
+│   └── example_config.yaml       # Template config — copy and fill in your paths
+│
 ├── experiment_notebooks/
-│   ├── first_experiments.ipynb
-│   ├── main_experiments.ipynb 
-│   └── first_results_report.pdf
+│   └── example.ipynb             # End-to-end run in Google Colab
 │
-├── src/      # Framework code (in progress)
+├── src/
+│   ├── config.py                 # Pydantic config schema and loader
+│   ├── utils.py                  # Reproducibility utilities
+│   ├── data/
+│   │   ├── noises.py             # GaussianNoiseAdder, SaltAndPepperNoiseAdder
+│   │   └── processing.py         # Dataset generation and DataLoaders
+│   ├── models/
+│   │   └── simple_cnn.py         # SimpleCNN architecture
+│   ├── experiment/
+│   │   ├── runner.py             # ExperimentRunner — grid of optimizer × scenario runs
+│   │   ├── robustness.py         # Cross-scenario robustness evaluation
+│   │   └── metrics.py            # Aggregation and summary tables
+│   └── training/
+│       ├── train.py              # Single epoch training loop
+│       ├── evaluate.py           # Evaluation loop
+│       └── tuner.py              # Optuna hyperparameter tuner
+│
 ├── tests/
-│
-├── pyproject.toml
-├── requirements.txt
-└── requirements.dev.txt
+├── run.py                        # Entry point
+└── pyproject.toml
 ```
-
-## ⚠️ Results Status
-
-`first_results_report.pdf` contains preliminary results from early experiment runs.
-
-Full updated benchmarks are not yet available due to limited GPU resources required for large-scale training.
-
-## 🚀 How to Run the Experiments
-
-To reproduce the results, follow the steps below. It is recommended to use **Google Colaboratory** with a **GPU accelerator** to significantly reduce computation time.
-
-### 1. Environment Setup
-
-- **Open the notebook**: Upload and open the `experiment_notebooks/main_experiments.ipynb` file in Google Colab.
-- **Enable GPU**: In the menu, go to `Runtime -> Change runtime type` and set the hardware accelerator to **GPU**.
-
-### 2. Execution Pipeline
-
-Run the notebook cells **in order**:
-
-#### 1️⃣ Install dependencies  
-Install required libraries and initialize the environment.
-
-#### 2️⃣ Connect infrastructure  
-- Connect to **MLflow** for experiment tracking  
-- Mount virtual storage (e.g., Google Drive)
-
-#### 3️⃣ Download dataset  
-Download **Animals-10** from Kaggle and prepare raw data.
-
-#### 4️⃣ Initialize model & noise modules  
-- Create CNN model  
-- Define noise generators (Gaussian, Salt & Pepper)
-
-#### 5️⃣ Generate noisy datasets  
-Create noisy dataset variants and save them to virtual storage.
-
-#### 6️⃣ Load helper utilities  
-Load training loops, evaluation functions, and logging utilities.
-
-#### 7️⃣ Hyperparameter tuning (Optuna)  
-Run hyperparameter optimization for selected optimizers.
-
-#### 8️⃣ Run main experiment  
-- Load configuration file  
-- Execute training across optimizers and noise scenarios  
-- Log results to MLflow  
 
 ---
 
-### Configuration File (Example)
+## Supported Optimizers
 
-Before running the main experiment, load a YAML configuration file.
+| Optimizer | Status |
+|-----------|--------|
+| SGD       | supported |
+| Adam      | supported |
+| LAMB      | supported |
 
-Example (simplified):
+To add an optimizer, register it in `OPTIMIZER_REGISTRY` in `run.py`:
+
+```python
+OPTIMIZER_REGISTRY = {
+    "SGD": optim.SGD,
+    "Adam": optim.Adam,
+}
+```
+
+---
+
+## Installation
+
+The project uses [uv](https://github.com/astral-sh/uv) for dependency management.
+
+```bash
+git clone https://github.com/irinszn/DL_Optimizers_Experiments.git
+cd DL_Optimizers_Experiments
+uv sync
+```
+
+---
+
+## Configuration
+
+Copy `configs/example_config.yaml` and fill in your paths:
 
 ```yaml
 mlflow:
-  experiment_name: "SimpleCNN_Animals10"
+  experiment_name: "{model_name}_{dataset_name}"
 
 data:
   dataset_name: "Animals10"
+  clean_data_path: "path/to/raw/data"
+  preprocessed_root_path: "path/to/preprocessed/data"
+  scenario_folder_template: "Animals10_{scenario_name}"
   num_classes: 10
+  num_workers: 2
+  pin_memory: false       # set to true on GPU
 
 model:
   name: "SimpleCNN"
+  params:
+    num_classes: 10
 
 training:
   epochs: 12
   batch_size: 64
   learning_rate: 0.001
-  num_runs: 3
+  target_loss: 0.4
+  criterion: "CrossEntropyLoss"
+  num_runs: 3             # runs per experiment for averaging
+  save_model_mode: "best" # best | all | none
+  early_stopping_patience: 3
+
+robustness:
+  trained_on_scenario: "no_noise"  # scenario used to train the reference model
 
 grid_search:
   optimizers:
     - name: "SGD"
       params:
         momentum: 0.9
+    - name: "Adam"
+      params: {}
 
   noise_scenarios:
     no_noise: []
     gaussian_0.05:
       - name: "GaussianNoiseAdder"
         params:
+          mean: 0.0
           std: 0.05
     salt_pepper_0.03:
       - name: "SaltAndPepperNoiseAdder"
@@ -114,11 +128,74 @@ grid_search:
           amount: 0.03
 ```
 
+Config is validated at startup via Pydantic — missing or mistyped fields produce a clear error immediately.
 
-### 3. Viewing the Results
+---
 
-After execution:
+## Running
 
-- A results file with collected metrics is generated
-- Summary tables are displayed in the notebook
-- All runs are logged to MLflow
+### Locally / on a server
+
+```bash
+# Run full pipeline: experiments + robustness evaluation
+python run.py --config configs/your_config.yaml
+
+# Run only training
+python run.py --config configs/your_config.yaml --mode experiments
+
+# Run only robustness evaluation (requires trained models in MLflow)
+python run.py --config configs/your_config.yaml --mode robustness
+```
+
+### Google Colab
+
+Open `experiment_notebooks/example.ipynb`. The notebook covers:
+
+1. Clone the repo and install dependencies
+2. Connect Google Drive and MLflow
+3. Download Animals-10 from Kaggle
+4. Generate noisy datasets and upload to Drive
+5. (Optional) Run Optuna hyperparameter tuning
+6. Run experiments and robustness evaluation
+
+---
+
+## Experiment Pipeline
+
+**Experiments** (`run_experiments`):
+
+- Iterates over all `noise_scenarios × optimizers` combinations
+- Each combination is run `num_runs` times with different seeds for statistical reliability
+- Per run: trains the model, applies early stopping, restores best-epoch checkpoint for test evaluation
+- Logs per-epoch metrics, convergence time, and aggregated statistics to MLflow
+
+**Robustness evaluation** (`run_robustness`):
+
+- Loads the best model trained on `robustness.trained_on_scenario` from MLflow
+- Evaluates it on every noise scenario in `grid_search.noise_scenarios`
+- Produces a cross-scenario accuracy matrix per optimizer
+
+---
+
+## Hyperparameter Tuning
+
+Optuna-based tuner is available via `HyperparameterTuner` in `src/training/tuner.py`. Supports SGD, Adam, and LAMB search spaces. Typically run before the main experiment to find optimal hyperparameters per optimizer.
+
+---
+
+## Experiment Tracking
+
+All runs are logged to **MLflow**:
+
+- Per-epoch `val_accuracy`, `val_f1_score`, `epoch_loss`
+- `convergence_time`, `best_epoch`, `best_val_accuracy`
+- Aggregated test metrics with mean, std, and 95% confidence intervals
+- Best model artifact saved according to `save_model_mode`
+
+---
+
+## Reproducibility
+
+- Train/val/test split is fixed via `SPLIT_RANDOM_STATE` — identical across all optimizer runs
+- Each of the `num_runs` runs uses a different randomly generated seed, logged to MLflow
+- `torch.backends.cudnn.deterministic = True` is set when CUDA is available

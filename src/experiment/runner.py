@@ -122,6 +122,7 @@ class ExperimentRunner:
                     best_val_accuracy = -1.0
                     best_epoch = 0
                     best_model_state = None
+                    best_val_metrics: dict[str, float] = {}
 
                     for epoch in range(training.epochs):
                         epoch_loss = train_one_epoch(model, optimizer, criterion, train_loader, self.device)
@@ -140,6 +141,7 @@ class ExperimentRunner:
                             best_val_accuracy = current_val_accuracy
                             best_epoch = epoch + 1
                             best_model_state = copy.deepcopy(model.state_dict())
+                            best_val_metrics = val_metrics
                             epochs_without_improvement = 0
                         else:
                             epochs_without_improvement += 1
@@ -167,6 +169,7 @@ class ExperimentRunner:
                         {
                             "metrics": test_metrics,
                             "time_metric": time_to_log,
+                            "best_val_metrics": best_val_metrics,
                             "val_metrics_history": val_metrics_history,
                         }
                     )

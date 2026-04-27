@@ -35,12 +35,15 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
         "validation_metrics": {},
         "test_metrics": {},
         "mean_time_s": None,
+        "val_metrics_history_per_run": [
+            run["val_metrics_history"] for run in run_results_list if run.get("val_metrics_history")
+        ],
     }
 
-    final_val_metrics = [run["val_metrics_history"][-1] for run in run_results_list if run.get("val_metrics_history")]
-    if final_val_metrics:
-        for key in final_val_metrics[0].keys():
-            values = [d.get(key) for d in final_val_metrics if d.get(key) is not None]
+    best_val_metrics_list = [run["best_val_metrics"] for run in run_results_list if run.get("best_val_metrics")]
+    if best_val_metrics_list:
+        for key in best_val_metrics_list[0].keys():
+            values = [d.get(key) for d in best_val_metrics_list if d.get(key) is not None]
             if values:
                 aggregated_results["validation_metrics"][key] = {
                     "mean": np.mean(values),

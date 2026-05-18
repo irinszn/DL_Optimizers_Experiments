@@ -21,7 +21,7 @@ from src.experiment.mlflow_logger import (
 from src.experiment.model_saver import save_best_overall_model, save_run_model
 from src.training.evaluate import evaluate_model
 from src.training.single_run import train_single_run
-from src.types import ModelRegistry, NoiseRegistry, OptimizerRegistry
+from src.types import ModelRegistry, OptimizerRegistry
 from src.utils import SPLIT_RANDOM_STATE, set_random_seed
 
 
@@ -32,7 +32,6 @@ class ExperimentRunner:
         self,
         config_path: str,
         model_registry: ModelRegistry,
-        noise_registry: NoiseRegistry,
         optimizer_registry: OptimizerRegistry,
     ) -> None:
         """
@@ -41,12 +40,10 @@ class ExperimentRunner:
         Args:
             config_path: Path to the YAML configuration file.
             model_registry: Dictionary of available model classes.
-            noise_registry: Dictionary of available noise/transformation classes.
             optimizer_registry: Dictionary of available optimizer classes.
         """
         self.config: ExperimentConfig = load_config(config_path)
         self.model_registry = model_registry
-        self.noise_registry = noise_registry
         self.optimizer_registry = optimizer_registry
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self._setup_mlflow()

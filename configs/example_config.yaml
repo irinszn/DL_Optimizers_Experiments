@@ -25,6 +25,7 @@ training:
   num_runs: 3         # Number of runs for averaging results
   save_model_mode: "best"  # best — save best model, all — save all, none — don't save
   early_stopping_patience: 3  # stop if val accuracy doesn't improve for N epochs (0 to disable)
+  early_stopping_metric: "accuracy"  # metric to monitor: accuracy, f1_score, precision, recall
 
 robustness:
   trained_on_scenario: "no_noise"  # Scenario used to train the reference model for robustness evaluation

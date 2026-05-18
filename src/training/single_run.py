@@ -33,7 +33,10 @@ def train_single_run(
     device: torch.device,
 ) -> SingleRunResult:
     """Runs the full training loop with early stopping and best-model tracking."""
-    early_stopping = EarlyStopping(patience=training_config.early_stopping_patience)
+    early_stopping = EarlyStopping(
+        patience=training_config.early_stopping_patience,
+        metric=training_config.early_stopping_metric,
+    )
     epoch_losses: list[float] = []
     val_metrics_history: list[dict[str, float]] = []
     convergence_time = -1.0

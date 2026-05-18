@@ -7,8 +7,9 @@ import torch.nn as nn
 class EarlyStopping:
     """Tracks best model state and triggers early stopping when patience runs out."""
 
-    def __init__(self, patience: int) -> None:
+    def __init__(self, patience: int, metric: str = "accuracy") -> None:
         self.patience = patience
+        self.metric = metric
         self.epochs_without_improvement = 0
         self.best_val_accuracy: float = -1.0
         self.best_epoch: int = 0
@@ -28,7 +29,7 @@ class EarlyStopping:
         Returns:
             True if training should stop, False otherwise.
         """
-        current_accuracy = val_metrics.get("accuracy", 0.0)
+        current_accuracy = val_metrics.get(self.metric, 0.0)
 
         if current_accuracy > self.best_val_accuracy:
             self.best_val_accuracy = current_accuracy

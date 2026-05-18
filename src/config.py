@@ -33,6 +33,7 @@ class TrainingConfig(BaseModel):
     num_runs: int = 1
     save_model_mode: str = "best"
     early_stopping_patience: int = 0
+    early_stopping_metric: str = "accuracy"
 
 
 class RobustnessConfig(BaseModel):

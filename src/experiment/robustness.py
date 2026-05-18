@@ -9,10 +9,11 @@ from src.config import load_config
 from src.data.processing import get_dataloaders
 from src.experiment.mlflow_logger import find_best_model_uri
 from src.training.evaluate import evaluate_model
+from src.types import OptimizerRegistry
 from src.utils import SPLIT_RANDOM_STATE
 
 
-def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: dict[str, Any]) -> None:
+def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: OptimizerRegistry) -> None:
     """Evaluates and compares the robustness of the best models across all noise scenarios."""
     config = load_config(config_path)
 

@@ -50,7 +50,7 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
                     "std": np.std(values) if num_runs > 1 else 0.0,
                 }
 
-    test_metrics: list[Any] = [run["metrics"] for run in run_results_list if run.get("metrics")]
+    test_metrics: list[dict[str, float]] = [run["metrics"] for run in run_results_list if run.get("metrics")]
     if test_metrics:
         for key in test_metrics[0].keys():
             values = [d.get(key) for d in test_metrics if d.get(key) is not None]

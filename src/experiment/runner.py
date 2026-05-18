@@ -21,6 +21,7 @@ from src.experiment.mlflow_logger import (
 from src.experiment.model_saver import save_best_overall_model, save_run_model
 from src.training.evaluate import evaluate_model
 from src.training.single_run import train_single_run
+from src.types import ModelRegistry, NoiseRegistry, OptimizerRegistry
 from src.utils import SPLIT_RANDOM_STATE, set_random_seed
 
 
@@ -30,9 +31,9 @@ class ExperimentRunner:
     def __init__(
         self,
         config_path: str,
-        model_registry: dict[str, type],
-        noise_registry: dict[str, type],
-        optimizer_registry: dict[str, type],
+        model_registry: ModelRegistry,
+        noise_registry: NoiseRegistry,
+        optimizer_registry: OptimizerRegistry,
     ) -> None:
         """
         Initializes ExperimentRunner.

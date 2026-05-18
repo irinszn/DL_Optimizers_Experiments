@@ -9,12 +9,13 @@ from torch_optimizer import Lamb
 from src.training.early_stopping import EarlyStopping
 from src.training.evaluate import evaluate_model
 from src.training.train import train_one_epoch
+from src.types import ModelFactory
 
 
 class HyperparameterTuner:
     def __init__(
         self,
-        model_class: type,
+        model_class: ModelFactory,
         model_params: dict,
         optimizer_name: str,
         train_loader: DataLoader,

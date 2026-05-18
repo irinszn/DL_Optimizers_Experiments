@@ -12,13 +12,14 @@ from torch.utils.data import DataLoader, Subset, random_split
 from tqdm import tqdm
 
 from src.config import load_config
+from src.types import NoiseRegistry
 
 
 def generate_noisy_datasets(
     source_path: str,
     target_root_path: str,
     noise_scenarios: dict,
-    noise_registry: dict,
+    noise_registry: NoiseRegistry,
     folder_template: str,
 ) -> None:
     """
@@ -74,7 +75,7 @@ def generate_noisy_datasets(
     print("\nDataset generation completed.")
 
 
-def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
+def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) -> None:
     """
     Colab + Google Drive wrapper around generate_noisy_datasets.
     Generates each scenario locally in /content/tmp_* first (fast SSD),

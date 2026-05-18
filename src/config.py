@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ class DataConfig(BaseModel):
     num_classes: int
     num_workers: int = 2
     pin_memory: bool = False
-    debug_subset_size: Optional[int] = None
+    debug_subset_size: int | None = None
 
 
 class ModelConfig(BaseModel):

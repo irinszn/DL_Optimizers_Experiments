@@ -1,4 +1,5 @@
 import os
+import random
 import shutil
 import time
 
@@ -146,6 +147,13 @@ def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
     print("\nDataset verification and generation are completed.")
 
 
+def _worker_init_fn(worker_id: int) -> None:
+    """Initializes each DataLoader worker with a unique deterministic seed."""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 def get_dataloaders(
     preprocessed_root_path: str,
     scenario_folder_template: str,
@@ -154,7 +162,7 @@ def get_dataloaders(
     batch_size: int,
     num_workers: int = 2,
     pin_memory: bool = False,
-    subset_size: int = None,
+    subset_size: int | None = None,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """
     Loads a preprocessed dataset from disk, splits into train/val/test, returns DataLoaders.
@@ -212,14 +220,31 @@ def get_dataloaders(
         train_val_data, [train_size, val_size], generator=torch.Generator().manual_seed(random_state)
     )
 
+    generator = torch.Generator().manual_seed(random_state)
     train_loader = DataLoader(
-        train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        generator=generator,
+        worker_init_fn=_worker_init_fn,
     )
     val_loader = DataLoader(
-        val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory
+        val_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=_worker_init_fn,
     )
     test_loader = DataLoader(
-        test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory
+        test_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=_worker_init_fn,
     )
 
     return train_loader, val_loader, test_loader

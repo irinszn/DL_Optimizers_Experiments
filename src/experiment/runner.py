@@ -5,7 +5,8 @@ import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
-from mlflow.models import infer_signature
+from mlflow.models import ModelSignature, infer_signature
+from torch.utils.data import DataLoader
 
 from src.config import ExperimentConfig, OptimizerConfig, load_config
 from src.data.processing import get_dataloaders
@@ -69,30 +70,19 @@ class ExperimentRunner:
     def _run_single_experiment(
         self,
         base_run_name: str,
-        scenario_name: str,
         opt_config: OptimizerConfig,
         criterion: nn.Module,
         run_seeds: np.ndarray,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        test_loader: DataLoader,
+        signature: ModelSignature,
     ) -> dict[str, Any]:
         """Runs one (optimizer, scenario) combination across all seeds."""
         training = self.config.training
         num_runs = training.num_runs
 
         print(f"\n--- Running {base_run_name} ({num_runs} times) ---")
-
-        train_loader, val_loader, test_loader = get_dataloaders(
-            preprocessed_root_path=self.config.data.preprocessed_root_path,
-            scenario_folder_template=self.config.data.scenario_folder_template,
-            scenario_name=scenario_name,
-            random_state=SPLIT_RANDOM_STATE,
-            batch_size=training.batch_size,
-            num_workers=self.config.data.num_workers,
-            pin_memory=self.config.data.pin_memory,
-            subset_size=self.config.data.debug_subset_size,
-        )
-
-        input_example = next(iter(train_loader))[0][:1].cpu().numpy()
-        signature = infer_signature(input_example)
 
         run_results_list = []
         best_overall_accuracy = -1.0
@@ -168,10 +158,30 @@ class ExperimentRunner:
         summary_data_full = []
         for scenario_name in self.config.grid_search.noise_scenarios:
             print(f"\n{'=' * 80}\nSCENARIO: {scenario_name}\n{'=' * 80}")
+
+            train_loader, val_loader, test_loader = get_dataloaders(
+                preprocessed_root_path=self.config.data.preprocessed_root_path,
+                scenario_folder_template=self.config.data.scenario_folder_template,
+                scenario_name=scenario_name,
+                random_state=SPLIT_RANDOM_STATE,
+                batch_size=self.config.training.batch_size,
+                num_workers=self.config.data.num_workers,
+                pin_memory=self.config.data.pin_memory,
+                subset_size=self.config.data.debug_subset_size,
+            )
+            signature = infer_signature(next(iter(train_loader))[0][:1].cpu().numpy())
+
             for opt_config in self.config.grid_search.optimizers:
                 base_run_name = f"{opt_config.name}_{scenario_name}"
                 run_results = self._run_single_experiment(
-                    base_run_name, scenario_name, opt_config, criterion, run_seeds
+                    base_run_name,
+                    opt_config,
+                    criterion,
+                    run_seeds,
+                    train_loader,
+                    val_loader,
+                    test_loader,
+                    signature,
                 )
                 summary_data_full.append(
                     {

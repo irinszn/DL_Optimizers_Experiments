@@ -186,17 +186,25 @@ class ExperimentRunner:
                         "experiment": base_run_name,
                         "hyperparams": str(opt_config.params),
                         "epochs_num": self.config.training.epochs,
-                        "mean_time_s": run_results.get("mean_time_s", 0),
+                        "mean_time_s": run_results.get("mean_time_s"),
                         "time_std_s": run_results.get("time_std_s", 0),
+                        "converged_runs": run_results.get("converged_runs", 0),
+                        "runs_count": self.config.training.num_runs,
                         "full_metrics": run_results.get("test_metrics", {}),
                     }
                 )
 
         summary_data_console = []
         for row in summary_data_full:
+            mean_time = row["mean_time_s"]
+            conv_time_str = (
+                f"{mean_time:.2f} ± {row['time_std_s']:.2f} ({row['converged_runs']}/{row['runs_count']})"
+                if mean_time is not None
+                else f"N/A (0/{row['runs_count']})"
+            )
             console_row = {
                 "Experiment": row["experiment"],
-                "Conv. Time, s": f"{row['mean_time_s']:.2f} ± {row['time_std_s']:.2f}",
+                "Conv. Time, s": conv_time_str,
             }
             for name, data in row["full_metrics"].items():
                 console_row[f"{name.capitalize()}, %"] = f"{data.get('mean', 0):.2f} ± {data.get('std', 0):.2f}"

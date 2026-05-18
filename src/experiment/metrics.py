@@ -73,9 +73,10 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
             }
 
     times: list[float] = [run["time_metric"] for run in run_results_list if run.get("time_metric") is not None]
+    aggregated_results["converged_runs"] = len(times)
     if times:
         aggregated_results["mean_time_s"] = np.mean(times)
-        aggregated_results["time_std_s"] = np.std(times) if num_runs > 1 else 0.0
+        aggregated_results["time_std_s"] = np.std(times) if len(times) > 1 else 0.0
 
     return aggregated_results
 

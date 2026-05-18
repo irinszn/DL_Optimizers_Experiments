@@ -19,7 +19,7 @@ class SingleRunResult:
     best_model_state: dict | None
     best_val_accuracy: float
     best_epoch: int
-    convergence_time: float
+    convergence_time: float | None
     stopped_epoch: int
 
 
@@ -55,9 +55,6 @@ def train_single_run(
         if early_stopping.step(val_metrics, model, epoch):
             break
 
-    total_time = time.time() - start_time
-    time_to_log = convergence_time if convergence_time > 0 else total_time
-
     return SingleRunResult(
         epoch_losses=epoch_losses,
         val_metrics_history=val_metrics_history,
@@ -65,6 +62,6 @@ def train_single_run(
         best_model_state=early_stopping.best_model_state,
         best_val_accuracy=early_stopping.best_val_accuracy,
         best_epoch=early_stopping.best_epoch,
-        convergence_time=time_to_log,
+        convergence_time=convergence_time if convergence_time >= 0 else None,
         stopped_epoch=early_stopping.stopped_epoch,
     )

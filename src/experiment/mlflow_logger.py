@@ -28,7 +28,8 @@ def log_epoch_metrics(result: SingleRunResult) -> None:
 
 def log_child_run_summary(result: SingleRunResult, test_metrics: dict[str, float]) -> None:
     """Logs post-training summary metrics to the current child MLflow run."""
-    mlflow.log_metric("convergence_time", result.convergence_time)
+    if result.convergence_time is not None:
+        mlflow.log_metric("convergence_time", result.convergence_time)
     mlflow.log_metric("best_epoch", result.best_epoch)
     mlflow.log_metric("best_val_accuracy", result.best_val_accuracy)
     mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
@@ -36,10 +37,11 @@ def log_child_run_summary(result: SingleRunResult, test_metrics: dict[str, float
 
 def log_aggregated_to_parent_run(aggregated_metrics: dict[str, Any]) -> None:
     """Logs aggregated metrics to the current parent MLflow run."""
-    mean_time = aggregated_metrics.get("mean_time_s", 0)
-    std_time = aggregated_metrics.get("time_std_s", 0)
-    mlflow.log_metric("mean_time", mean_time)
-    mlflow.log_metric("std_time", std_time)
+    mlflow.log_metric("converged_runs", aggregated_metrics.get("converged_runs", 0))
+    mean_time = aggregated_metrics.get("mean_time_s")
+    if mean_time is not None:
+        mlflow.log_metric("mean_convergence_time", mean_time)
+        mlflow.log_metric("std_convergence_time", aggregated_metrics.get("time_std_s", 0))
 
     for name, data in aggregated_metrics.get("test_metrics", {}).items():
         mlflow.log_metric(f"test_{name}_mean", data["mean"])
@@ -119,8 +121,10 @@ def print_aggregated_summary(aggregated_metrics: dict[str, Any], run_name: str) 
     if not aggregated_metrics:
         return
 
-    mean_time = aggregated_metrics.get("mean_time_s", 0)
+    mean_time = aggregated_metrics.get("mean_time_s")
     std_time = aggregated_metrics.get("time_std_s", 0)
+    converged = aggregated_metrics.get("converged_runs", 0)
+    total = aggregated_metrics.get("runs_count", 0)
     val = aggregated_metrics.get("validation_metrics", {})
     test = aggregated_metrics.get("test_metrics", {})
 
@@ -130,7 +134,10 @@ def print_aggregated_summary(aggregated_metrics: dict[str, Any], run_name: str) 
     print(
         f"  - Val F1-score:  {val.get('f1_score', {}).get('mean', 0):.2f} ± {val.get('f1_score', {}).get('std', 0):.2f}"
     )
-    print(f"  - Conv. Time, s: {mean_time:.2f} ± {std_time:.2f}")
+    if mean_time is not None:
+        print(f"  - Conv. Time, s: {mean_time:.2f} ± {std_time:.2f} ({converged}/{total} runs converged)")
+    else:
+        print(f"  - Conv. Time, s: N/A (0/{total} runs reached target loss)")
     print(
         f"\n  - Test Accuracy: {test.get('accuracy', {}).get('mean', 0):.2f} ± {test.get('accuracy', {}).get('std', 0):.2f}"
     )

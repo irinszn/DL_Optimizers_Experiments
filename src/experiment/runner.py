@@ -175,11 +175,10 @@ class ExperimentRunner:
                     )
 
                     mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
-                    mlflow.log_metric("final_val_accuracy", best_val_accuracy)
 
                     if save_mode == "all":
                         print(f"    - Saving the model (Val Acc: {best_val_accuracy:.2f}%)")
-                        mlflow.pytorch.log_model(model, name="final_model", signature=signature)
+                        mlflow.pytorch.log_model(model, name="best_epoch_model", signature=signature)
 
                     if save_mode == "best" and best_val_accuracy > best_overall_run_accuracy:
                         print(f"    - A new best launch has been found (Val Acc: {best_val_accuracy:.2f}%)")

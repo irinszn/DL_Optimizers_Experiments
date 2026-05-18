@@ -6,6 +6,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from torch_optimizer import Lamb
 
+from src.training.early_stopping import EarlyStopping
 from src.training.evaluate import evaluate_model
 from src.training.train import train_one_epoch
 
@@ -18,19 +19,21 @@ class HyperparameterTuner:
         optimizer_name: str,
         train_loader: DataLoader,
         val_loader: DataLoader,
-        criterion: nn.Module = None,
+        criterion: nn.Module | None = None,
         epochs_per_trial: int = 12,
+        early_stopping_patience: int = 3,
     ):
         """
         Initializes the tuner.
 
         Args:
             model_class: Model class.
-            optimizer_name (str): Name of the optimizer for selection ('SGD', 'Adam', 'LAMB').
+            optimizer_name: Name of the optimizer ('SGD', 'Adam', 'LAMB').
             train_loader: DataLoader for train data.
             val_loader: DataLoader for validation data.
-            criterion: Loss function.
-            epochs_per_trial (int): Number of epochs for one trial.
+            criterion: Loss function. Defaults to CrossEntropyLoss.
+            epochs_per_trial: Max epochs per trial.
+            early_stopping_patience: Stops a trial early if val accuracy doesn't improve.
         """
         self.model_class = model_class
         self.model_params = model_params
@@ -38,6 +41,7 @@ class HyperparameterTuner:
         self.val_loader = val_loader
         self.criterion = criterion or nn.CrossEntropyLoss()
         self.epochs_per_trial = epochs_per_trial
+        self.early_stopping_patience = early_stopping_patience
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._suggestion_methods = {
@@ -81,32 +85,41 @@ class HyperparameterTuner:
             "weight_decay": 10 ** trial.suggest_float("wd_log10", -5, -2),
         }
 
-    def objective(self, trial: optuna.Trial) -> float:
-        model = self.model_class(**self.model_params).to(self.device)
-        params = self._suggestion_methods[self.optimizer_name](trial)
-        scheduler = None
-
+    def _build_optimizer(self, model: nn.Module, params: dict) -> tuple[torch.optim.Optimizer, OneCycleLR | None]:
+        """Creates optimizer and optional scheduler from suggested params."""
         optimizer: torch.optim.Optimizer
+        scheduler = None
         if self.optimizer_name == "SGD":
-            warmup_fraction = params.pop("warmup_frac", 0.0)
+            warmup_frac = params.pop("warmup_frac", 0.0)
             optimizer = optim.SGD(model.parameters(), **params)
-            if warmup_fraction > 0:
+            if warmup_frac > 0:
                 scheduler = OneCycleLR(
                     optimizer,
                     max_lr=params["lr"],
                     epochs=self.epochs_per_trial,
                     steps_per_epoch=len(self.train_loader),
-                    pct_start=warmup_fraction,
+                    pct_start=warmup_frac,
                 )
         elif self.optimizer_name == "Adam":
             optimizer = optim.Adam(model.parameters(), **params)
-        elif self.optimizer_name == "LAMB":
+        else:
             optimizer = Lamb(model.parameters(), **params)
+        return optimizer, scheduler
 
-        for _ in range(self.epochs_per_trial):
+    def objective(self, trial: optuna.Trial) -> float:
+        """Runs one Optuna trial and returns the best validation accuracy."""
+        model = self.model_class(**self.model_params).to(self.device)
+        params = self._suggestion_methods[self.optimizer_name](trial)
+        optimizer, scheduler = self._build_optimizer(model, params)
+        early_stopping = EarlyStopping(patience=self.early_stopping_patience)
+
+        for epoch in range(self.epochs_per_trial):
             train_one_epoch(model, optimizer, self.criterion, self.train_loader, self.device, scheduler)
+            val_metrics = evaluate_model(model, self.val_loader, self.device)
+            if early_stopping.step(val_metrics, model, epoch):
+                break
 
-        return evaluate_model(model, self.val_loader, self.device)["accuracy"]
+        return early_stopping.best_val_accuracy
 
     def tune(self, n_trials: int = 100, direction: str = "maximize", timeout: int = None) -> optuna.Study:
         """

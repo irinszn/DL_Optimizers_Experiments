@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import scipy.stats as st
 from tabulate import tabulate
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict[str, Any]:
@@ -88,7 +91,7 @@ def generate_summary_table(data: list[dict]) -> None:
     print("=" * 100)
 
     if not data:
-        print("There is no data to display in the summary.")
+        logger.warning("There is no data to display in the summary.")
         return
 
     summary_df = pd.DataFrame(data)
@@ -98,7 +101,7 @@ def generate_summary_table(data: list[dict]) -> None:
 def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_summary.csv") -> None:
     """Saves a complete summary of experiments to a CSV file."""
     if not summary_data:
-        print("There is no data to save to CSV.")
+        logger.warning("There is no data to save to CSV.")
         return
 
     records = []
@@ -119,6 +122,6 @@ def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_su
 
     try:
         pd.DataFrame(records).to_csv(filename, index=False, float_format="%.2f")
-        print(f"\nThe full summary was successfully saved to file: {filename}")
+        logger.info("Full summary saved to: %s", filename)
     except Exception as e:
-        print(f"\nError saving CSV file: {e}")
+        logger.error("Error saving CSV file: %s", e)

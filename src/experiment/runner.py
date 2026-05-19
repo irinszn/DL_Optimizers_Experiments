@@ -1,4 +1,5 @@
 import copy
+import logging
 from typing import Any
 
 import mlflow
@@ -23,6 +24,8 @@ from src.training.evaluate import evaluate_model
 from src.training.single_run import train_single_run
 from src.types import ModelRegistry, OptimizerRegistry
 from src.utils import SPLIT_RANDOM_STATE, set_random_seed
+
+logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner:
@@ -55,7 +58,7 @@ class ExperimentRunner:
             dataset_name=self.config.data.dataset_name,
         )
         mlflow.set_experiment(experiment_name)
-        print(f"MLflow experiment set to: '{experiment_name}'")
+        logger.info("MLflow experiment set to: '%s'", experiment_name)
 
     def _get_model(self) -> nn.Module:
         """Creates and returns a model instance according to the config."""
@@ -80,7 +83,7 @@ class ExperimentRunner:
         training = self.config.training
         num_runs = training.num_runs
 
-        print(f"\n--- Running {base_run_name} ({num_runs} times) ---")
+        logger.info("Running %s (%d times)", base_run_name, num_runs)
 
         run_results_list = []
         best_overall_accuracy = -1.0
@@ -116,7 +119,7 @@ class ExperimentRunner:
                         save_run_model(model, result.best_val_accuracy, signature)
 
                     if training.save_model_mode == "best" and result.best_val_accuracy > best_overall_accuracy:
-                        print(f"    - A new best launch has been found (Val Acc: {result.best_val_accuracy:.2f}%)")
+                        logger.info("New best run found (Val Acc: %.2f%%)", result.best_val_accuracy)
                         best_overall_accuracy = result.best_val_accuracy
                         best_run_index = i + 1
                         best_overall_model_state = copy.deepcopy(model.state_dict())
@@ -136,7 +139,7 @@ class ExperimentRunner:
                 save_best_overall_model(best_model, best_overall_accuracy, best_run_index, num_runs, signature)
 
             if not run_results_list:
-                print("Warning: No runs were performed, aggregation is not possible.")
+                logger.warning("No runs were performed, aggregation is not possible.")
                 return {}
 
             aggregated_metrics = calculate_aggregated_metrics(run_results_list)
@@ -147,15 +150,17 @@ class ExperimentRunner:
 
     def run(self) -> None:
         """Launches the full grid of experiments."""
-        print(f"The experiment is running on the device: {self.device}")
+        logger.info("The experiment is running on device: %s", self.device)
 
         criterion = self._get_criterion()
         run_seeds = np.random.randint(0, 2**32 - 1, size=self.config.training.num_runs)
-        print(f"\nGenerated seeds: {run_seeds}\n")
+        logger.info("Generated seeds: %s", run_seeds)
 
         summary_data_full = []
         for scenario_name in self.config.grid_search.noise_scenarios:
-            print(f"\n{'=' * 80}\nSCENARIO: {scenario_name}\n{'=' * 80}")
+            logger.info("=" * 80)
+            logger.info("SCENARIO: %s", scenario_name)
+            logger.info("=" * 80)
 
             train_loader, val_loader, test_loader = get_dataloaders(
                 preprocessed_root_path=self.config.data.preprocessed_root_path,
@@ -212,4 +217,4 @@ class ExperimentRunner:
 
         generate_summary_table(summary_data_console)
         save_summary_to_csv(summary_data_full)
-        print("\nAll experiments were completed successfully.")
+        logger.info("All experiments completed successfully.")

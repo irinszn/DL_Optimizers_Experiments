@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import mlflow.pytorch
@@ -11,6 +12,8 @@ from src.experiment.mlflow_logger import find_best_model_uri
 from src.training.evaluate import evaluate_model
 from src.types import OptimizerRegistry
 from src.utils import SPLIT_RANDOM_STATE
+
+logger = logging.getLogger(__name__)
 
 
 def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: OptimizerRegistry) -> None:
@@ -26,14 +29,14 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
     optimizers_to_compare = list(optimizer_registry.keys())
     scenario_trained_on = config.robustness.trained_on_scenario
 
-    print(f"Starting comparative robustness evaluation for optimizers: {optimizers_to_compare}")
+    logger.info("Starting comparative robustness evaluation for optimizers: %s", optimizers_to_compare)
 
     all_results: list[dict[str, Any]] = []
 
     for optimizer_name in optimizers_to_compare:
-        print("\n" + "=" * 80)
-        print(f"PROCESSING OPTIMIZER: {optimizer_name}")
-        print("=" * 80)
+        logger.info("=" * 80)
+        logger.info("PROCESSING OPTIMIZER: %s", optimizer_name)
+        logger.info("=" * 80)
 
         model_uri = find_best_model_uri(
             experiment_name=experiment_name,
@@ -42,15 +45,15 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
         )
 
         if not model_uri:
-            print(f"Skipping '{optimizer_name}' as no valid champion model was found.")
+            logger.warning("Skipping '%s': no valid champion model was found.", optimizer_name)
             continue
 
-        print(f"Loading model from URI: {model_uri}...")
+        logger.info("Loading model from URI: %s", model_uri)
         try:
             model = mlflow.pytorch.load_model(model_uri, map_location=device)
             model.eval()
         except Exception as e:
-            print(f"ERROR: Failed to load model for '{optimizer_name}'. Skipping. Error: {e}")
+            logger.error("Failed to load model for '%s'. Skipping. Error: %s", optimizer_name, e)
             continue
 
         for scenario_name in tqdm(config.grid_search.noise_scenarios, desc=f"Evaluating {optimizer_name}"):
@@ -72,10 +75,10 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
                 row.update(metrics)
                 all_results.append(row)
             except Exception as e:
-                print(f"ERROR: Failed scenario '{scenario_name}' for '{optimizer_name}': {e}")
+                logger.error("Failed scenario '%s' for '%s': %s", scenario_name, optimizer_name, e)
 
     if not all_results:
-        print("\nNo results were collected. Cannot generate a summary table.")
+        logger.warning("No results were collected. Cannot generate a summary table.")
         return
 
     results_df = pd.DataFrame(all_results)
@@ -85,18 +88,17 @@ def run_comparative_robustness_evaluation(config_path: str, optimizer_registry: 
         desired_order = list(config.grid_search.noise_scenarios.keys())
         pivot_df = pivot_df.reindex([s for s in desired_order if s in pivot_df.index])
 
-        print("\n\n" + "=" * 80)
-        print(" " * 15 + "COMPARATIVE ROBUSTNESS SUMMARY (Metric: accuracy)")
-        print("=" * 80)
+        logger.info("=" * 80)
+        logger.info("COMPARATIVE ROBUSTNESS SUMMARY (Metric: accuracy)")
+        logger.info("=" * 80)
 
         pd.set_option("display.width", 1000)
         pd.set_option("display.max_columns", 20)
         pd.set_option("display.precision", 2)
-        print(pivot_df)
-        print("=" * 80)
+        logger.info("\n%s", pivot_df.to_string())
+        logger.info("=" * 80)
     except Exception as e:
-        print(f"Failed to create a pivot table: {e}. Displaying raw data:")
-        print(results_df)
+        logger.error("Failed to create a pivot table: %s. Displaying raw data:\n%s", e, results_df.to_string())
 
     results_df.to_csv("comparative_robustness_evaluation.csv", index=False, float_format="%.4f")
-    print("\nFull results saved to 'comparative_robustness_evaluation.csv'")
+    logger.info("Full results saved to 'comparative_robustness_evaluation.csv'")

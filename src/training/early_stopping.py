@@ -1,7 +1,9 @@
 import copy
-from typing import Optional
+import logging
 
 import torch.nn as nn
+
+logger = logging.getLogger(__name__)
 
 
 class EarlyStopping:
@@ -42,7 +44,7 @@ class EarlyStopping:
         self.epochs_without_improvement += 1
         if self.patience > 0 and self.epochs_without_improvement >= self.patience:
             self.stopped_epoch = epoch + 1
-            print(f"    - Early stopping at epoch {epoch + 1} (no improvement for {self.patience} epochs)")
+            logger.info("Early stopping at epoch %d (no improvement for %d epochs)", epoch + 1, self.patience)
             return True
 
         return False

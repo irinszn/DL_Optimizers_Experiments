@@ -1,9 +1,27 @@
+import logging
 import random
 
 import numpy as np
 import torch
 
 SPLIT_RANDOM_STATE = 42
+
+
+def setup_logging(level: int = logging.INFO, log_file: str = "experiment.log") -> None:
+    """
+    Configures root logger to write to both console and a log file.
+
+    Args:
+        level: Logging level (e.g. logging.INFO, logging.DEBUG).
+        log_file: Path to the log file.
+    """
+    fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+    handlers: list[logging.Handler] = [
+        logging.StreamHandler(),
+        logging.FileHandler(log_file, encoding="utf-8"),
+    ]
+    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
 
 
 def set_random_seed(seed: int) -> None:

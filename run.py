@@ -6,6 +6,7 @@ from src.data.noises import GaussianNoiseAdder, SaltAndPepperNoiseAdder
 from src.experiment.robustness import run_comparative_robustness_evaluation
 from src.experiment.runner import ExperimentRunner
 from src.models.simple_cnn import SimpleCNN
+from src.utils import setup_logging
 
 MODEL_REGISTRY = {
     "SimpleCNN": SimpleCNN,
@@ -26,7 +27,6 @@ def run_experiments(config_path: str) -> None:
     runner = ExperimentRunner(
         config_path=config_path,
         model_registry=MODEL_REGISTRY,
-        noise_registry=NOISE_REGISTRY,
         optimizer_registry=OPTIMIZER_REGISTRY,
     )
     runner.run()
@@ -40,6 +40,7 @@ def run_robustness(config_path: str) -> None:
 
 
 if __name__ == "__main__":
+    setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/base_config.yaml", help="Path to config file")
     parser.add_argument(

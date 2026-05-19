@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import shutil
@@ -13,6 +14,8 @@ from tqdm import tqdm
 
 from src.config import load_config
 from src.types import NoiseRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def generate_noisy_datasets(
@@ -33,21 +36,21 @@ def generate_noisy_datasets(
         noise_registry: Dict mapping noise class names to their classes.
         folder_template: Format string for subfolder names, e.g. 'Animals10_{scenario_name}'.
     """
-    print(f"Loading clean dataset from: {source_path}")
+    logger.info("Loading clean dataset from: %s", source_path)
     clean_data = torchvision.datasets.ImageFolder(root=source_path)
 
     os.makedirs(target_root_path, exist_ok=True)
-    print(f"Generating datasets in: {target_root_path}")
+    logger.info("Generating datasets in: %s", target_root_path)
 
     for scenario_name, noise_config in noise_scenarios.items():
         scenario_folder_name = folder_template.format(scenario_name=scenario_name)
         target_path = os.path.join(target_root_path, scenario_folder_name)
 
         if os.path.exists(target_path):
-            print(f"Dataset for '{scenario_name}' already exists. Skipping.")
+            logger.info("Dataset for '%s' already exists. Skipping.", scenario_name)
             continue
 
-        print(f"\nGenerating dataset '{scenario_name}' in '{target_path}'...")
+        logger.info("Generating dataset '%s' in '%s'...", scenario_name, target_path)
 
         noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
         transform_pipeline = transforms.Compose(
@@ -68,11 +71,11 @@ def generate_noisy_datasets(
                 processed_img.save(os.path.join(class_path, img_name))
 
             except Exception as e:
-                print(f"Failed to process file {img_path}: {e}")
+                logger.warning("Failed to process file %s: %s", img_path, e)
 
-        print(f"Done: {target_path}")
+        logger.info("Done: %s", target_path)
 
-    print("\nDataset generation completed.")
+    logger.info("Dataset generation completed.")
 
 
 def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) -> None:
@@ -92,18 +95,18 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
     folder_template = config.data.scenario_folder_template
     noise_scenarios = config.grid_search.noise_scenarios
 
-    print(f"Loading clean dataset from: {source_path}")
+    logger.info("Loading clean dataset from: %s", source_path)
     clean_data = torchvision.datasets.ImageFolder(root=source_path)
 
     os.makedirs(root_path, exist_ok=True)
-    print(f"Check and generate datasets in Drive path: {root_path}")
+    logger.info("Check and generate datasets in Drive path: %s", root_path)
 
     for scenario_name, noise_config in noise_scenarios.items():
         scenario_folder_name = folder_template.format(scenario_name=scenario_name)
         target_path = os.path.join(root_path, scenario_folder_name)
 
         if os.path.exists(target_path):
-            print(f"Dataset for '{scenario_name}' already exists on Drive. Skip.")
+            logger.info("Dataset for '%s' already exists on Drive. Skipping.", scenario_name)
             continue
 
         local_temp = f"/content/tmp_{scenario_folder_name}"
@@ -111,7 +114,7 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
             shutil.rmtree(local_temp)
         os.makedirs(local_temp, exist_ok=True)
 
-        print(f"\nGenerating dataset '{scenario_name}' locally in '{local_temp}'...")
+        logger.info("Generating dataset '%s' locally in '%s'...", scenario_name, local_temp)
 
         noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
         transform_pipeline = transforms.Compose(
@@ -131,21 +134,21 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
                 processed_img.save(os.path.join(local_class_path, img_name))
 
             except Exception as e:
-                print(f"Failed to process file {img_path}: {e}")
+                logger.warning("Failed to process file %s: %s", img_path, e)
 
-        print(f"Uploading scenario '{scenario_name}' to Google Drive...")
+        logger.info("Uploading scenario '%s' to Google Drive...", scenario_name)
         shutil.copytree(local_temp, target_path)
-        print(f"Uploaded: {target_path}")
+        logger.info("Uploaded: %s", target_path)
 
         sync_seconds = 900
-        print(f"Waiting {sync_seconds // 60} minutes for Google Drive to sync...")
+        logger.info("Waiting %d minutes for Google Drive to sync...", sync_seconds // 60)
         for _ in tqdm(range(sync_seconds), desc="Google Drive syncing"):
             time.sleep(1)
 
-        print("Synchronization time completed. Proceeding to next scenario.")
+        logger.info("Synchronization completed. Proceeding to next scenario.")
         shutil.rmtree(local_temp)
 
-    print("\nDataset verification and generation are completed.")
+    logger.info("Dataset verification and generation completed.")
 
 
 def _worker_init_fn(worker_id: int) -> None:
@@ -194,7 +197,7 @@ def get_dataloaders(
             f"Please ensure you have run the preprocessing script to generate this dataset."
         )
 
-    print(f"    - Loading data from: {data_path}")
+    logger.info("Loading data from: %s", data_path)
 
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])]
@@ -203,7 +206,7 @@ def get_dataloaders(
     full_dataset = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
 
     if subset_size:
-        print(f"    - DEBUG MODE: Running on a slice of {subset_size} / {len(full_dataset)} samples\n")
+        logger.info("DEBUG MODE: Running on a slice of %d / %d samples", subset_size, len(full_dataset))
         subset_size = min(subset_size, len(full_dataset))
         rng = np.random.default_rng(random_state)
         indices = rng.choice(len(full_dataset), size=subset_size, replace=False).tolist()

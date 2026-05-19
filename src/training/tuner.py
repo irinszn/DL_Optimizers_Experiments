@@ -1,3 +1,5 @@
+import logging
+
 import optuna
 import torch
 import torch.nn as nn
@@ -10,6 +12,8 @@ from src.training.early_stopping import EarlyStopping
 from src.training.evaluate import evaluate_model
 from src.training.train import train_one_epoch
 from src.types import ModelFactory
+
+logger = logging.getLogger(__name__)
 
 
 class HyperparameterTuner:
@@ -57,8 +61,8 @@ class HyperparameterTuner:
             )
 
         self.optimizer_name = optimizer_name
-        print(f"The tuner will use the device: {self.device}")
-        print(f"The tuner is configured to select parameters for {self.optimizer_name}")
+        logger.info("Tuner device: %s", self.device)
+        logger.info("Tuner configured for optimizer: %s", self.optimizer_name)
 
     def _suggest_sgd_params(self, trial: optuna.Trial) -> dict:
         """Search space for SGD."""
@@ -134,10 +138,7 @@ class HyperparameterTuner:
         study = optuna.create_study(direction=direction)
         study.optimize(self.objective, n_trials=n_trials, timeout=timeout)
 
-        print("\nThe selection process is completed.")
-        print(f"Best Accuracy for {self.optimizer_name}: {study.best_value:.4f}")
-        print("With hyperparams:")
-        for key, value in study.best_params.items():
-            print(f"  - {key}: {value}")
+        logger.info("Tuning completed. Best accuracy for %s: %.4f", self.optimizer_name, study.best_value)
+        logger.info("Best hyperparams: %s", study.best_params)
 
         return study

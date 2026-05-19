@@ -1,15 +1,16 @@
-from typing import Callable, TypeAlias
+from collections.abc import Callable, Mapping
+from typing import TypeAlias
 
 import torch
 import torch.nn as nn
 from torch.optim import Optimizer
 
 OptimizerFactory: TypeAlias = Callable[..., Optimizer]
-OptimizerRegistry: TypeAlias = dict[str, OptimizerFactory]
+OptimizerRegistry: TypeAlias = Mapping[str, OptimizerFactory]
 
 ModelFactory: TypeAlias = Callable[..., nn.Module]
-ModelRegistry: TypeAlias = dict[str, ModelFactory]
+ModelRegistry: TypeAlias = Mapping[str, ModelFactory]
 
 NoiseTransform: TypeAlias = Callable[[torch.Tensor], torch.Tensor]
 NoiseFactory: TypeAlias = Callable[..., NoiseTransform]
-NoiseRegistry: TypeAlias = dict[str, NoiseFactory]
+NoiseRegistry: TypeAlias = Mapping[str, NoiseFactory]

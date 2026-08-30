@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from src.config import TrainingConfig
 from src.training.early_stopping import EarlyStopping
 from src.training.evaluate import evaluate_model
+from src.training.scheduler import build_scheduler
 from src.training.train import train_one_epoch
 
 
@@ -37,6 +38,12 @@ def train_single_run(
         patience=training_config.early_stopping_patience,
         metric=training_config.early_stopping_metric,
     )
+    scheduler = build_scheduler(
+        optimizer=optimizer,
+        scheduler_config=training_config.scheduler,
+        total_epochs=training_config.epochs,
+        base_lr=training_config.learning_rate,
+    )
     epoch_losses: list[float] = []
     val_metrics_history: list[dict[str, float]] = []
     convergence_time = -1.0
@@ -51,6 +58,9 @@ def train_single_run(
 
         if epoch_loss <= training_config.target_loss and convergence_time < 0:
             convergence_time = time.time() - start_time
+
+        if scheduler is not None:
+            scheduler.step()
 
         if early_stopping.step(val_metrics, model, epoch):
             break

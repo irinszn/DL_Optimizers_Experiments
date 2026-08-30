@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 
@@ -10,7 +9,6 @@ def train_one_epoch(
     criterion: nn.Module,
     train_loader: DataLoader,
     device: torch.device,
-    scheduler: LRScheduler | None = None,
 ) -> float:
     model.train()
     running_loss = 0.0
@@ -22,8 +20,6 @@ def train_one_epoch(
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
         running_loss += loss.item()
 
     return running_loss / len(train_loader)

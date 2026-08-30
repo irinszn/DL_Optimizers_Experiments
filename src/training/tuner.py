@@ -4,12 +4,13 @@ import optuna
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from torch_optimizer import Lamb
 
+from src.config import SchedulerConfig
 from src.training.early_stopping import EarlyStopping
 from src.training.evaluate import evaluate_model
+from src.training.scheduler import build_scheduler
 from src.training.train import train_one_epoch
 from src.types import ModelFactory
 
@@ -27,6 +28,7 @@ class HyperparameterTuner:
         criterion: nn.Module | None = None,
         epochs_per_trial: int = 12,
         early_stopping_patience: int = 3,
+        scheduler_config: SchedulerConfig | None = None,
     ):
         """
         Initializes the tuner.
@@ -47,6 +49,7 @@ class HyperparameterTuner:
         self.criterion = criterion or nn.CrossEntropyLoss()
         self.epochs_per_trial = epochs_per_trial
         self.early_stopping_patience = early_stopping_patience
+        self.scheduler_config = scheduler_config or SchedulerConfig()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._suggestion_methods = {
@@ -69,9 +72,8 @@ class HyperparameterTuner:
         return {
             "lr": 10 ** trial.suggest_float("lr_log10", -4, 0),
             "momentum": trial.suggest_float("momentum", 0.5, 0.99),
-            "nesterov": trial.suggest_categorical("nesterov", [False, True]),
+            "nesterov": True,
             "weight_decay": 10 ** trial.suggest_float("wd_log10", -6, -3.3),
-            "warmup_frac": trial.suggest_float("warmup_frac", 0.0, 0.1),
         }
 
     def _suggest_adam_params(self, trial: optuna.Trial) -> dict:
@@ -90,37 +92,33 @@ class HyperparameterTuner:
             "weight_decay": 10 ** trial.suggest_float("wd_log10", -5, -2),
         }
 
-    def _build_optimizer(self, model: nn.Module, params: dict) -> tuple[torch.optim.Optimizer, OneCycleLR | None]:
-        """Creates optimizer and optional scheduler from suggested params."""
-        optimizer: torch.optim.Optimizer
-        scheduler = None
+    def _build_optimizer(self, model: nn.Module, params: dict) -> torch.optim.Optimizer:
+        """Creates an optimizer from suggested params."""
         if self.optimizer_name == "SGD":
-            warmup_frac = params.pop("warmup_frac", 0.0)
-            optimizer = optim.SGD(model.parameters(), **params)
-            if warmup_frac > 0:
-                scheduler = OneCycleLR(
-                    optimizer,
-                    max_lr=params["lr"],
-                    epochs=self.epochs_per_trial,
-                    steps_per_epoch=len(self.train_loader),
-                    pct_start=warmup_frac,
-                )
+            return optim.SGD(model.parameters(), **params)
         elif self.optimizer_name == "Adam":
-            optimizer = optim.Adam(model.parameters(), **params)
+            return optim.Adam(model.parameters(), **params)
         else:
-            optimizer = Lamb(model.parameters(), **params)
-        return optimizer, scheduler
+            return Lamb(model.parameters(), **params)
 
     def objective(self, trial: optuna.Trial) -> float:
         """Runs one Optuna trial and returns the best validation accuracy."""
         model = self.model_class(**self.model_params).to(self.device)
         params = self._suggestion_methods[self.optimizer_name](trial)
-        optimizer, scheduler = self._build_optimizer(model, params)
+        optimizer = self._build_optimizer(model, params)
+        scheduler = build_scheduler(
+            optimizer=optimizer,
+            scheduler_config=self.scheduler_config,
+            total_epochs=self.epochs_per_trial,
+            base_lr=params["lr"],
+        )
         early_stopping = EarlyStopping(patience=self.early_stopping_patience)
 
         for epoch in range(self.epochs_per_trial):
-            train_one_epoch(model, optimizer, self.criterion, self.train_loader, self.device, scheduler)
+            train_one_epoch(model, optimizer, self.criterion, self.train_loader, self.device)
             val_metrics = evaluate_model(model, self.val_loader, self.device)
+            if scheduler is not None:
+                scheduler.step()
             if early_stopping.step(val_metrics, model, epoch):
                 break
 

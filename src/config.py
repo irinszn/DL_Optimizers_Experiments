@@ -24,6 +24,12 @@ class ModelConfig(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class SchedulerConfig(BaseModel):
+    name: str = "constant"  # constant | cosine | linear
+    warmup_ratio: float = 0.0
+    min_lr_ratio: float = 0.1
+
+
 class TrainingConfig(BaseModel):
     epochs: int
     batch_size: int
@@ -34,6 +40,7 @@ class TrainingConfig(BaseModel):
     save_model_mode: str = "best"
     early_stopping_patience: int = 0
     early_stopping_metric: str = "accuracy"
+    scheduler: SchedulerConfig = SchedulerConfig()
 
 
 class RobustnessConfig(BaseModel):

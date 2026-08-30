@@ -26,6 +26,10 @@ training:
   save_model_mode: "best"  # best — save best model, all — save all, none — don't save
   early_stopping_patience: 3  # stop if val accuracy doesn't improve for N epochs (0 to disable)
   early_stopping_metric: "accuracy"  # metric to monitor: accuracy, f1_score, precision, recall
+  scheduler:
+    name: "constant"       # constant | cosine | linear
+    warmup_ratio: 0.0      # fraction of total epochs for linear warmup (0 to disable)
+    min_lr_ratio: 0.1      # minimum LR as fraction of learning_rate
 
 robustness:
   trained_on_scenario: "no_noise"  # Scenario used to train the reference model for robustness evaluation
@@ -35,6 +39,7 @@ grid_search:
     - name: "SGD"     # Optimizer name from OPTIMIZER_REGISTRY in run.py
       params:
         momentum: 0.9
+        nesterov: true
     - name: "Adam"
       params: {}
     # - name: "LAMB"  # Add more optimizers with params as needed

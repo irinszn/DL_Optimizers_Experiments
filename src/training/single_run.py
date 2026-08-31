@@ -42,7 +42,7 @@ def train_single_run(
         optimizer=optimizer,
         scheduler_config=training_config.scheduler,
         total_epochs=training_config.epochs,
-        base_lr=training_config.learning_rate,
+        base_lr=optimizer.param_groups[0]["lr"],
     )
     epoch_losses: list[float] = []
     val_metrics_history: list[dict[str, float]] = []

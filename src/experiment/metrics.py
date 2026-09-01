@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import scipy.stats as st
 from tabulate import tabulate
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict[str, Any]:
@@ -35,19 +38,22 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
         "validation_metrics": {},
         "test_metrics": {},
         "mean_time_s": None,
+        "val_metrics_history_per_run": [
+            run["val_metrics_history"] for run in run_results_list if run.get("val_metrics_history")
+        ],
     }
 
-    final_val_metrics = [run["val_metrics_history"][-1] for run in run_results_list if run.get("val_metrics_history")]
-    if final_val_metrics:
-        for key in final_val_metrics[0].keys():
-            values = [d.get(key) for d in final_val_metrics if d.get(key) is not None]
+    best_val_metrics_list = [run["best_val_metrics"] for run in run_results_list if run.get("best_val_metrics")]
+    if best_val_metrics_list:
+        for key in best_val_metrics_list[0].keys():
+            values = [d.get(key) for d in best_val_metrics_list if d.get(key) is not None]
             if values:
                 aggregated_results["validation_metrics"][key] = {
                     "mean": np.mean(values),
                     "std": np.std(values) if num_runs > 1 else 0.0,
                 }
 
-    test_metrics: list[Any] = [run["metrics"] for run in run_results_list if run.get("metrics")]
+    test_metrics: list[dict[str, float]] = [run["metrics"] for run in run_results_list if run.get("metrics")]
     if test_metrics:
         for key in test_metrics[0].keys():
             values = [d.get(key) for d in test_metrics if d.get(key) is not None]
@@ -70,9 +76,10 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
             }
 
     times: list[float] = [run["time_metric"] for run in run_results_list if run.get("time_metric") is not None]
+    aggregated_results["converged_runs"] = len(times)
     if times:
         aggregated_results["mean_time_s"] = np.mean(times)
-        aggregated_results["time_std_s"] = np.std(times) if num_runs > 1 else 0.0
+        aggregated_results["time_std_s"] = np.std(times) if len(times) > 1 else 0.0
 
     return aggregated_results
 
@@ -84,7 +91,7 @@ def generate_summary_table(data: list[dict]) -> None:
     print("=" * 100)
 
     if not data:
-        print("There is no data to display in the summary.")
+        logger.warning("There is no data to display in the summary.")
         return
 
     summary_df = pd.DataFrame(data)
@@ -94,7 +101,7 @@ def generate_summary_table(data: list[dict]) -> None:
 def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_summary.csv") -> None:
     """Saves a complete summary of experiments to a CSV file."""
     if not summary_data:
-        print("There is no data to save to CSV.")
+        logger.warning("There is no data to save to CSV.")
         return
 
     records = []
@@ -115,6 +122,6 @@ def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_su
 
     try:
         pd.DataFrame(records).to_csv(filename, index=False, float_format="%.2f")
-        print(f"\nThe full summary was successfully saved to file: {filename}")
+        logger.info("Full summary saved to: %s", filename)
     except Exception as e:
-        print(f"\nError saving CSV file: {e}")
+        logger.error("Error saving CSV file: %s", e)

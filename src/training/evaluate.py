@@ -1,5 +1,3 @@
-from typing import Any
-
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
@@ -7,8 +5,8 @@ from torch.utils.data import DataLoader
 
 
 def evaluate_model(model: nn.Module, test_loader: DataLoader, device: torch.device) -> dict[str, float]:
-    all_labels: list[Any] = []
-    all_predictions: list[Any] = []
+    all_labels: list[int] = []
+    all_predictions: list[int] = []
 
     model.eval()
 

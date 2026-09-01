@@ -1,4 +1,6 @@
+import logging
 import os
+import random
 import shutil
 import time
 
@@ -6,36 +8,105 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-import yaml
 from PIL import Image
 from torch.utils.data import DataLoader, Subset, random_split
 from tqdm import tqdm
 
+from src.config import load_config
+from src.types import NoiseRegistry
 
-def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
+logger = logging.getLogger(__name__)
+
+
+def generate_noisy_datasets(
+    source_path: str,
+    target_root_path: str,
+    noise_scenarios: dict,
+    noise_registry: NoiseRegistry,
+    folder_template: str,
+) -> None:
     """
-    Scans Google Drive and creates only noisy datasets that don't yet exist.
-    Generates locally first (fast), then uploads only missing scenarios.
+    Generates noisy datasets from a clean image folder and saves them to disk.
+    Skips scenarios that already exist. Platform-agnostic: local, server, or Colab.
+
+    Args:
+        source_path: Path to the clean dataset (ImageFolder format).
+        target_root_path: Root directory where noisy datasets will be saved.
+        noise_scenarios: Scenario configs, e.g. {'gaussian_0.05': [{'name': 'GaussianNoiseAdder', 'params': {...}}]}.
+        noise_registry: Dict mapping noise class names to their classes.
+        folder_template: Format string for subfolder names, e.g. 'Animals10_{scenario_name}'.
     """
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    logger.info("Loading clean dataset from: %s", source_path)
+    clean_data = torchvision.datasets.ImageFolder(root=source_path)
 
-    source_path = config["data"]["clean_data_path"]
-    root_path = config["data"]["preprocessed_root_path"]
-    folder_template = config["data"]["scenario_folder_template"]
+    os.makedirs(target_root_path, exist_ok=True)
+    logger.info("Generating datasets in: %s", target_root_path)
 
-    print(f"Loading clean dataset from: {source_path}")
+    for scenario_name, noise_config in noise_scenarios.items():
+        scenario_folder_name = folder_template.format(scenario_name=scenario_name)
+        target_path = os.path.join(target_root_path, scenario_folder_name)
+
+        if os.path.exists(target_path):
+            logger.info("Dataset for '%s' already exists. Skipping.", scenario_name)
+            continue
+
+        logger.info("Generating dataset '%s' in '%s'...", scenario_name, target_path)
+
+        noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
+        transform_pipeline = transforms.Compose(
+            [transforms.Resize((128, 128)), transforms.ToTensor(), *noise_transforms, transforms.ToPILImage()]
+        )
+
+        os.makedirs(target_path, exist_ok=True)
+        for img_path, label_idx in tqdm(clean_data.imgs, desc=f"  Scenario {scenario_name}"):
+            try:
+                img = Image.open(img_path).convert("RGB")
+                processed_img = transform_pipeline(img)
+
+                class_name = clean_data.classes[label_idx]
+                class_path = os.path.join(target_path, class_name)
+                os.makedirs(class_path, exist_ok=True)
+
+                img_name = os.path.basename(img_path)
+                processed_img.save(os.path.join(class_path, img_name))
+
+            except Exception as e:
+                logger.warning("Failed to process file %s: %s", img_path, e)
+
+        logger.info("Done: %s", target_path)
+
+    logger.info("Dataset generation completed.")
+
+
+def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) -> None:
+    """
+    Colab + Google Drive wrapper around generate_noisy_datasets.
+    Generates each scenario locally in /content/tmp_* first (fast SSD),
+    then copies to Drive and waits for Drive to sync before proceeding.
+
+    Args:
+        config_path: Path to the YAML configuration file.
+        noise_registry: Dict mapping noise class names to their classes.
+    """
+    config = load_config(config_path)
+
+    source_path = config.data.clean_data_path
+    root_path = config.data.preprocessed_root_path
+    folder_template = config.data.scenario_folder_template
+    noise_scenarios = config.grid_search.noise_scenarios
+
+    logger.info("Loading clean dataset from: %s", source_path)
     clean_data = torchvision.datasets.ImageFolder(root=source_path)
 
     os.makedirs(root_path, exist_ok=True)
-    print(f"Check and generate datasets in Drive path: {root_path}")
+    logger.info("Check and generate datasets in Drive path: %s", root_path)
 
-    for scenario_name, noise_config in config["grid_search"]["noise_scenarios"].items():
+    for scenario_name, noise_config in noise_scenarios.items():
         scenario_folder_name = folder_template.format(scenario_name=scenario_name)
         target_path = os.path.join(root_path, scenario_folder_name)
 
         if os.path.exists(target_path):
-            print(f"Dataset for '{scenario_name}' already exists on Drive. Skip.")
+            logger.info("Dataset for '%s' already exists on Drive. Skipping.", scenario_name)
             continue
 
         local_temp = f"/content/tmp_{scenario_folder_name}"
@@ -43,10 +114,9 @@ def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
             shutil.rmtree(local_temp)
         os.makedirs(local_temp, exist_ok=True)
 
-        print(f"\nGenerating dataset '{scenario_name}' locally in '{local_temp}'...")
+        logger.info("Generating dataset '%s' locally in '%s'...", scenario_name, local_temp)
 
-        noise_transforms = [noise_registry[n["name"]](**n["params"]) for n in noise_config]
-
+        noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
         transform_pipeline = transforms.Compose(
             [transforms.Resize((128, 128)), transforms.ToTensor(), *noise_transforms, transforms.ToPILImage()]
         )
@@ -64,54 +134,59 @@ def generate_datasets_on_drive(config_path: str, noise_registry: dict) -> None:
                 processed_img.save(os.path.join(local_class_path, img_name))
 
             except Exception as e:
-                print(f"Failed to process file {img_path}: {e}")
+                logger.warning("Failed to process file %s: %s", img_path, e)
 
-        print(f"Uploading scenario '{scenario_name}' to Google Drive...")
+        logger.info("Uploading scenario '%s' to Google Drive...", scenario_name)
         shutil.copytree(local_temp, target_path)
-        print(f"Uploaded: {target_path}")
+        logger.info("Uploaded: %s", target_path)
 
         sync_seconds = 900
-        print(f"Waiting {sync_seconds // 60} minutes for Google Drive to sync...")
+        logger.info("Waiting %d minutes for Google Drive to sync...", sync_seconds // 60)
         for _ in tqdm(range(sync_seconds), desc="Google Drive syncing"):
             time.sleep(1)
 
-        print("Synchronization time completed. Proceeding to next scenario.")
+        logger.info("Synchronization completed. Proceeding to next scenario.")
         shutil.rmtree(local_temp)
 
-    print("\nDataset verification and generation are completed.")
+    logger.info("Dataset verification and generation completed.")
 
 
-def get_dataloaders_from_drive(
+def _worker_init_fn(worker_id: int) -> None:
+    """Initializes each DataLoader worker with a unique deterministic seed."""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
+def get_dataloaders(
     preprocessed_root_path: str,
     scenario_folder_template: str,
     scenario_name: str,
     random_state: int,
     batch_size: int,
-    subset_size: int = None,
+    num_workers: int = 2,
+    pin_memory: bool = False,
+    subset_size: int | None = None,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """
-    Loads a preprocessed dataset from Google Drive based on a scenario name,
-    splits it into training, validation, and test sets, and returns their respective DataLoaders.
+    Loads a preprocessed dataset from disk, splits into train/val/test, returns DataLoaders.
+    The split is reproducible via random_state — all optimizers see identical data partitions.
 
     Args:
-        preprocessed_root_path (str): The path to the root directory where all
-                                      preprocessed datasets are stored.
-        scenario_folder_template (str): A format string for the scenario subfolder name,
-                                        e.g., 'Animals10_{scenario_name}'.
-        scenario_name (str): The specific name of the scenario to load,
-                             e.g., 'gaussian_0.03'.
-        random_state (int): The seed for the random number generator to ensure
-                            reproducible train/val/test splits.
-        batch_size (int): The number of samples per batch to load.
-        subset_size (int, optional): If specified, a random subset of this size
-                                     is used instead of the full dataset.
-                                     Defaults to None (using the full dataset).
+        preprocessed_root_path: Root directory with all preprocessed datasets.
+        scenario_folder_template: Format string for the subfolder name, e.g. 'Animals10_{scenario_name}'.
+        scenario_name: Scenario to load, e.g. 'gaussian_0.03'.
+        random_state: Seed for reproducible train/val/test splits.
+        batch_size: Batch size for all loaders.
+        num_workers: Number of worker processes for data loading.
+        pin_memory: If true, tensors are pinned to GPU memory for faster transfer.
+        subset_size: If set, use a random subset of this size instead of the full dataset.
 
     Returns:
-        A tuple containing three DataLoader objects: (train_loader, val_loader, test_loader).
+        Tuple of (train_loader, val_loader, test_loader).
 
     Raises:
-        FileNotFoundError: If the directory for the specified scenario does not exist.
+        FileNotFoundError: If the scenario directory does not exist.
     """
     scenario_folder_name = scenario_folder_template.format(scenario_name=scenario_name)
     data_path = os.path.join(preprocessed_root_path, scenario_folder_name)
@@ -122,7 +197,7 @@ def get_dataloaders_from_drive(
             f"Please ensure you have run the preprocessing script to generate this dataset."
         )
 
-    print(f"    - Loading data from: {data_path}")
+    logger.info("Loading data from: %s", data_path)
 
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])]
@@ -131,9 +206,10 @@ def get_dataloaders_from_drive(
     full_dataset = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
 
     if subset_size:
-        print(f"    - DEBUG MODE: Running on a slice of {subset_size} / {len(full_dataset)} samples\n")
+        logger.info("DEBUG MODE: Running on a slice of %d / %d samples", subset_size, len(full_dataset))
         subset_size = min(subset_size, len(full_dataset))
-        indices = list(range(subset_size))
+        rng = np.random.default_rng(random_state)
+        indices = rng.choice(len(full_dataset), size=subset_size, replace=False).tolist()
         full_dataset = Subset(full_dataset, indices)
 
     train_val_size = int(0.8 * len(full_dataset))
@@ -148,8 +224,31 @@ def get_dataloaders_from_drive(
         train_val_data, [train_size, val_size], generator=torch.Generator().manual_seed(random_state)
     )
 
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=2)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=2)
+    generator = torch.Generator().manual_seed(random_state)
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        generator=generator,
+        worker_init_fn=_worker_init_fn,
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=_worker_init_fn,
+    )
+    test_loader = DataLoader(
+        test_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=_worker_init_fn,
+    )
 
     return train_loader, val_loader, test_loader

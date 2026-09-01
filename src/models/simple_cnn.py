@@ -19,8 +19,9 @@ class SimpleCNN(nn.Module):
             nn.BatchNorm2d(64),
             nn.MaxPool2d(2, 2),
         )
+        self.pool = nn.AdaptiveAvgPool2d((4, 4))
         self.classifier = nn.Sequential(
-            nn.Linear(64 * 16 * 16, 512),
+            nn.Linear(64 * 4 * 4, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, num_classes),
@@ -28,6 +29,7 @@ class SimpleCNN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.features(x)
+        x = self.pool(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x

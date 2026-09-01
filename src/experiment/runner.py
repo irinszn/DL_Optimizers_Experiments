@@ -1,31 +1,42 @@
 import copy
-import time
+import logging
 from typing import Any
 
 import mlflow
-import mlflow.pytorch
 import numpy as np
 import torch
 import torch.nn as nn
-import yaml
-from mlflow.models import infer_signature
+from mlflow.models import ModelSignature, infer_signature
+from torch.utils.data import DataLoader
 
-from src.data.processing import get_dataloaders_from_drive
+from src.config import ExperimentConfig, OptimizerConfig, load_config
+from src.data.processing import get_dataloaders
 from src.experiment.metrics import calculate_aggregated_metrics, generate_summary_table, save_summary_to_csv
+from src.experiment.mlflow_logger import (
+    log_aggregated_to_parent_run,
+    log_child_run_summary,
+    log_epoch_metrics,
+    log_parent_run_params,
+    print_aggregated_summary,
+)
+from src.experiment.model_saver import save_best_overall_model, save_run_model
 from src.training.evaluate import evaluate_model
-from src.training.train import train_one_epoch
-from src.utils import set_random_seed
+from src.training.single_run import train_single_run
+from src.training.tuner import HyperparameterTuner
+from src.types import ModelRegistry, OptimizerRegistry
+from src.utils import SPLIT_RANDOM_STATE, find_nearest_tuned_scenario, set_random_seed
+
+logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner:
-    """A class for managing, running, and logging experiments based on a given configuration."""
+    """Orchestrates the full grid-search experiment across optimizers and noise scenarios."""
 
     def __init__(
         self,
         config_path: str,
-        model_registry: dict[str, type],
-        noise_registry: dict[str, type],
-        optimizer_registry: dict[str, type],
+        model_registry: ModelRegistry,
+        optimizer_registry: OptimizerRegistry,
     ) -> None:
         """
         Initializes ExperimentRunner.
@@ -33,79 +44,141 @@ class ExperimentRunner:
         Args:
             config_path: Path to the YAML configuration file.
             model_registry: Dictionary of available model classes.
-            noise_registry: Dictionary with available noise/transformation classes.
             optimizer_registry: Dictionary of available optimizer classes.
         """
-        self.config_path = config_path
-        with open(config_path, "r") as f:
-            self.config = yaml.safe_load(f)
-
+        self.config: ExperimentConfig = load_config(config_path)
         self.model_registry = model_registry
-        self.noise_registry = noise_registry
         self.optimizer_registry = optimizer_registry
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
         self._setup_mlflow()
 
     def _setup_mlflow(self) -> None:
-        """Sets up an experiment in MLflow."""
-        exp_name_template = self.config["mlflow"]["experiment_name"]
-        experiment_name = exp_name_template.format(
-            model_name=self.config["model"]["name"],
-            dataset_name=self.config["data"]["dataset_name"],
+        """Sets up the MLflow experiment based on the config."""
+        experiment_name = self.config.mlflow.experiment_name.format(
+            model_name=self.config.model.name,
+            dataset_name=self.config.data.dataset_name,
         )
         mlflow.set_experiment(experiment_name)
-        print(f"MLflow experiment set to: '{experiment_name}'")
+        logger.info("MLflow experiment set to: '%s'", experiment_name)
 
     def _get_model(self) -> nn.Module:
-        """Creates and returns an instance of the model according to the config."""
-        model_name = self.config["model"]["name"]
-        model_params = self.config["model"].get("params", {})
-        return self.model_registry[model_name](**model_params).to(self.device)
+        """Creates and returns a model instance according to the config."""
+        return self.model_registry[self.config.model.name](**self.config.model.params).to(self.device)
 
     def _get_criterion(self) -> nn.Module:
-        """Creates and returns a loss function."""
-        return getattr(nn, self.config["training"]["criterion"])()
+        """Creates and returns a loss function according to the config."""
+        return getattr(nn, self.config.training.criterion)()
+
+    def _get_dataloaders(self, scenario_name: str) -> tuple[DataLoader, DataLoader, DataLoader]:
+        """Loads dataloaders for a given scenario."""
+        return get_dataloaders(
+            preprocessed_root_path=self.config.data.preprocessed_root_path,
+            scenario_folder_template=self.config.data.scenario_folder_template,
+            scenario_name=scenario_name,
+            random_state=SPLIT_RANDOM_STATE,
+            batch_size=self.config.training.batch_size,
+            num_workers=self.config.data.num_workers,
+            pin_memory=self.config.data.pin_memory,
+            subset_size=self.config.data.debug_subset_size,
+        )
+
+    def _tune_optimizers(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """
+        Runs Optuna tuning for each (optimizer, tune_scenario) pair.
+        For non-tuned scenarios, assigns params from the nearest tuned scenario.
+
+        Returns:
+            Nested dict: tuned_params[optimizer_name][scenario_name] = optimizer params dict.
+        """
+        training = self.config.training
+        tuner_cfg = training.tuner
+        tune_scenarios = tuner_cfg.tune_scenarios
+        all_scenarios = list(self.config.grid_search.noise_scenarios.keys())
+
+        # {optimizer_name: {scenario_name: params_dict}}
+        tuned_params: dict[str, dict[str, dict[str, Any]]] = {}
+
+        for opt_config in self.config.grid_search.optimizers:
+            tuned_params[opt_config.name] = {}
+            criterion = self._get_criterion()
+
+            for scenario_name in tune_scenarios:
+                logger.info("=" * 60)
+                logger.info("TUNING %s on scenario '%s'", opt_config.name, scenario_name)
+                logger.info("=" * 60)
+
+                train_loader, val_loader, _ = self._get_dataloaders(scenario_name)
+
+                # Params in config but not in search_space are fixed (e.g. nesterov)
+                tuned_keys = {"lr", "momentum", "weight_decay", "betas"}
+                fixed_params = {k: v for k, v in opt_config.params.items() if k not in tuned_keys}
+
+                tuner = HyperparameterTuner(
+                    model_class=self.model_registry[self.config.model.name],
+                    model_params=self.config.model.params,
+                    optimizer_name=opt_config.name,
+                    optimizer_factory=self.optimizer_registry[opt_config.name],
+                    search_space=opt_config.search_space,
+                    fixed_params=fixed_params,
+                    train_loader=train_loader,
+                    val_loader=val_loader,
+                    criterion=criterion,
+                    epochs_per_trial=training.epochs,
+                    early_stopping_patience=training.early_stopping_patience,
+                    scheduler_config=training.scheduler,
+                )
+
+                best_params = tuner.tune(
+                    n_trials=tuner_cfg.n_trials,
+                    timeout=tuner_cfg.timeout,
+                )
+                tuned_params[opt_config.name][scenario_name] = best_params
+                logger.info("Best params for %s on '%s': %s", opt_config.name, scenario_name, best_params)
+
+            # Fill non-tuned scenarios with nearest neighbor
+            for scenario_name in all_scenarios:
+                if scenario_name not in tuned_params[opt_config.name]:
+                    nearest = find_nearest_tuned_scenario(scenario_name, tune_scenarios)
+                    tuned_params[opt_config.name][scenario_name] = tuned_params[opt_config.name][nearest]
+                    logger.info(
+                        "Scenario '%s' for %s: using params from nearest tuned scenario '%s'",
+                        scenario_name,
+                        opt_config.name,
+                        nearest,
+                    )
+
+        return tuned_params
 
     def _run_single_experiment(
         self,
         base_run_name: str,
-        scenario_name: str,
-        opt_config: dict,
+        opt_config: OptimizerConfig,
+        opt_params: dict[str, Any],
         criterion: nn.Module,
         run_seeds: np.ndarray,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        test_loader: DataLoader,
+        signature: ModelSignature,
     ) -> dict[str, Any]:
-        """Performs one full experiment (optimizer + scenario) with N runs."""
+        """Runs one (optimizer, scenario) combination across all seeds."""
+        training = self.config.training
+        num_runs = training.num_runs
+
+        logger.info("Running %s (%d times)", base_run_name, num_runs)
+
         run_results_list = []
-        training_params = self.config["training"]
-        save_mode = training_params.get("save_model_mode", "best")
-        num_runs = training_params.get("num_runs", 1)
-        opt_name = opt_config["name"]
-        target_loss = training_params.get("target_loss", 0.3)
+        best_overall_accuracy = -1.0
+        best_overall_model_state = None
+        best_run_index = -1
 
-        print(f"\n--- Running {base_run_name} ({num_runs} times) ---")
-
-        with mlflow.start_run(run_name=base_run_name) as parent_run:
-            mlflow.log_params(self.config["model"]["params"])
-            mlflow.log_params(opt_config["params"])
-            mlflow.log_param("optimizer_name", opt_name)
-            mlflow.log_param("num_runs", num_runs)
-
-            best_overall_run_accuracy = -1.0
-            best_overall_model_state = None
-            best_run_index = -1
-
-            train_loader, val_loader, test_loader = get_dataloaders_from_drive(
-                preprocessed_root_path=self.config["data"]["preprocessed_root_path"],
-                scenario_folder_template=self.config["data"]["scenario_folder_template"],
-                scenario_name=scenario_name,
-                random_state=42,
-                batch_size=self.config["training"]["batch_size"],
-                subset_size=self.config["data"].get("debug_subset_size"),
-            )
-
-            input_example = next(iter(train_loader))[0][:1].cpu().numpy()
-            signature = infer_signature(input_example)
+        with mlflow.start_run(run_name=base_run_name):
+            log_parent_run_params(self.config.model, opt_config, num_runs)
+            mlflow.log_params({f"tuned_{k}": v for k, v in opt_params.items() if not isinstance(v, tuple)})
+            for k, v in opt_params.items():
+                if isinstance(v, tuple):
+                    for i, val in enumerate(v):
+                        mlflow.log_param(f"tuned_{k}_{i}", val)
 
             for i, run_seed in enumerate(run_seeds):
                 with mlflow.start_run(run_name=f"{base_run_name}_run_{i + 1}", nested=True):
@@ -113,144 +186,123 @@ class ExperimentRunner:
                     set_random_seed(int(run_seed))
 
                     model = self._get_model()
-                    optimizer_class = self.optimizer_registry[opt_name]
-                    optimizer = optimizer_class(
-                        model.parameters(),
-                        lr=training_params["learning_rate"],
-                        **opt_config["params"],
+                    optimizer = self.optimizer_registry[opt_config.name](model.parameters(), **opt_params)
+
+                    result = train_single_run(
+                        model, optimizer, criterion, train_loader, val_loader, training, self.device
                     )
 
-                    val_metrics_history = []
-                    convergence_time: float = -1.0
-                    start_time = time.time()
+                    log_epoch_metrics(result)
 
-                    for epoch in range(training_params["epochs"]):
-                        epoch_loss = train_one_epoch(model, optimizer, criterion, train_loader, self.device)
-                        val_metrics = evaluate_model(model, val_loader, self.device)
-                        val_metrics_history.append(val_metrics)
-
-                        if epoch_loss <= target_loss and convergence_time < 0:
-                            convergence_time = time.time() - start_time
-
-                        mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
-                        for name, value in val_metrics.items():
-                            mlflow.log_metric(f"val_{name}", value, step=epoch)
-
-                    total_time = time.time() - start_time
-                    time_to_log = convergence_time if convergence_time > 0 else total_time
-                    mlflow.log_metric("convergence_time", time_to_log)
+                    if result.best_model_state is not None:
+                        model.load_state_dict(result.best_model_state)
 
                     test_metrics = evaluate_model(model, test_loader, self.device)
-                    run_results_list.append(
-                        {
-                            "metrics": test_metrics,
-                            "time_metric": time_to_log,
-                            "val_metrics_history": val_metrics_history,
-                        }
-                    )
+                    log_child_run_summary(result, test_metrics)
 
-                    mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
+                    if training.save_model_mode == "all":
+                        save_run_model(model, result.best_val_accuracy, signature)
 
-                    final_run_val_accuracy = val_metrics_history[-1].get("accuracy", 0) if val_metrics_history else 0
-                    mlflow.log_metric("final_val_accuracy", final_run_val_accuracy)
-
-                    if save_mode == "all":
-                        print(f"    - Saving the model (Val Acc: {final_run_val_accuracy:.2f}%)")
-                        mlflow.pytorch.log_model(model, name="final_model", signature=signature)
-
-                    if save_mode == "best" and final_run_val_accuracy > best_overall_run_accuracy:
-                        print(f"    - A new best launch has been found (Val Acc: {final_run_val_accuracy:.2f}%)")
-                        best_overall_run_accuracy = final_run_val_accuracy
+                    if training.save_model_mode == "best" and result.best_val_accuracy > best_overall_accuracy:
+                        logger.info("New best run found (Val Acc: %.2f%%)", result.best_val_accuracy)
+                        best_overall_accuracy = result.best_val_accuracy
                         best_run_index = i + 1
                         best_overall_model_state = copy.deepcopy(model.state_dict())
 
-            if save_mode == "best" and best_overall_model_state is not None:
-                print(
-                    f"\nSaving the BEST model from {num_runs} runs (run #{best_run_index}, Val Acc: {best_overall_run_accuracy:.2f}%)"
+                run_results_list.append(
+                    {
+                        "metrics": test_metrics,
+                        "time_metric": result.convergence_time,
+                        "best_val_metrics": result.best_val_metrics,
+                        "val_metrics_history": result.val_metrics_history,
+                    }
                 )
+
+            if training.save_model_mode == "best" and best_overall_model_state is not None:
                 best_model = self._get_model()
                 best_model.load_state_dict(best_overall_model_state)
-                mlflow.pytorch.log_model(best_model, name="best_model_across_runs", signature=signature)
-                mlflow.log_metric("best_run_val_accuracy", best_overall_run_accuracy)
-                mlflow.log_param("best_run_index", best_run_index)
+                save_best_overall_model(best_model, best_overall_accuracy, best_run_index, num_runs, signature)
 
             if not run_results_list:
-                print("Warning: No runs were performed, aggregation is not possible.")
+                logger.warning("No runs were performed, aggregation is not possible.")
                 return {}
 
             aggregated_metrics = calculate_aggregated_metrics(run_results_list)
+            log_aggregated_to_parent_run(aggregated_metrics)
+            print_aggregated_summary(aggregated_metrics, base_run_name)
 
-            print(f"\n--- Aggregation and logging for '{base_run_name}' ---")
-            if aggregated_metrics:
-                mean_time = aggregated_metrics.get("mean_time_s", 0)
-                std_time = aggregated_metrics.get("time_std_s", 0)
-                mlflow.log_metric("mean_time", mean_time)
-                mlflow.log_metric("std_time", std_time)
-
-                for name, data in aggregated_metrics.get("test_metrics", {}).items():
-                    mlflow.log_metric(f"test_{name}_mean", data["mean"])
-                    mlflow.log_metric(f"test_{name}_std", data["std"])
-                    mlflow.log_metric(f"test_{name}_ci95_lower", data["ci_95_lower"])
-                    mlflow.log_metric(f"test_{name}_ci95_upper", data["ci_95_upper"])
-
-                for name, data in aggregated_metrics.get("validation_metrics", {}).items():
-                    mlflow.log_metric(f"val_{name}_mean", data["mean"])
-                    mlflow.log_metric(f"val_{name}_std", data["std"])
-
-                val_metrics_agg = aggregated_metrics.get("validation_metrics", {})
-                test_metrics_agg = aggregated_metrics.get("test_metrics", {})
-                print(
-                    f"  - Val Accuracy:  {val_metrics_agg.get('accuracy', {}).get('mean', 0):.2f} ± {val_metrics_agg.get('accuracy', {}).get('std', 0):.2f}"
-                )
-                print(
-                    f"  - Val F1-score:  {val_metrics_agg.get('f1_score', {}).get('mean', 0):.2f} ± {val_metrics_agg.get('f1_score', {}).get('std', 0):.2f}"
-                )
-                print(f"  - Conv. Time, s: {mean_time:.2f} ± {std_time:.2f}")
-                print(
-                    f"\n  - Test Accuracy: {test_metrics_agg.get('accuracy', {}).get('mean', 0):.2f} ± {test_metrics_agg.get('accuracy', {}).get('std', 0):.2f}"
-                )
-                print(
-                    f"  - Test F1-score: {test_metrics_agg.get('f1_score', {}).get('mean', 0):.2f} ± {test_metrics_agg.get('f1_score', {}).get('std', 0):.2f}"
-                )
-
-            return aggregated_metrics
+        return aggregated_metrics
 
     def run(self) -> None:
-        """Launches the entire grid of experiments."""
-        print(f"The experiment is running on the device: {self.device}")
+        """Launches the full grid of experiments."""
+        logger.info("The experiment is running on device: %s", self.device)
 
+        training = self.config.training
+
+        # Tuning phase
+        tuned_params: dict[str, dict[str, dict[str, Any]]] | None = None
+        if training.use_tuner:
+            logger.info("=" * 80)
+            logger.info("STARTING HYPERPARAMETER TUNING PHASE")
+            logger.info("=" * 80)
+            tuned_params = self._tune_optimizers()
+
+        # Experiment phase
         criterion = self._get_criterion()
+        run_seeds = np.random.randint(0, 2**32 - 1, size=training.num_runs)
+        logger.info("Generated seeds: %s", run_seeds)
+
         summary_data_full = []
-        num_runs = self.config["training"].get("num_runs", 1)
+        for scenario_name in self.config.grid_search.noise_scenarios:
+            logger.info("=" * 80)
+            logger.info("SCENARIO: %s", scenario_name)
+            logger.info("=" * 80)
 
-        run_seeds = np.random.randint(0, 2**32 - 1, size=num_runs)
-        print(f"\nGenerated seeds: {run_seeds}\n")
+            train_loader, val_loader, test_loader = self._get_dataloaders(scenario_name)
+            signature = infer_signature(next(iter(train_loader))[0][:1].cpu().numpy())
 
-        for scenario_name in self.config["grid_search"]["noise_scenarios"]:
-            print(f"\n{'=' * 80}\nSCENARIO: {scenario_name}\n{'=' * 80}")
+            for opt_config in self.config.grid_search.optimizers:
+                if tuned_params is not None:
+                    opt_params = tuned_params[opt_config.name][scenario_name]
+                else:
+                    opt_params = dict(opt_config.params)
 
-            for opt_config in self.config["grid_search"]["optimizers"]:
-                base_run_name = f"{opt_config['name']}_{scenario_name}"
+                base_run_name = f"{opt_config.name}_{scenario_name}"
                 run_results = self._run_single_experiment(
-                    base_run_name, scenario_name, opt_config, criterion, run_seeds
+                    base_run_name,
+                    opt_config,
+                    opt_params,
+                    criterion,
+                    run_seeds,
+                    train_loader,
+                    val_loader,
+                    test_loader,
+                    signature,
                 )
-
                 summary_data_full.append(
                     {
                         "experiment": base_run_name,
-                        "hyperparams": str(opt_config.get("params", "default")),
-                        "epochs_num": self.config["training"]["epochs"],
-                        "mean_time_s": run_results.get("mean_time_s", 0),
+                        "hyperparams": str(opt_params),
+                        "epochs_num": training.epochs,
+                        "mean_time_s": run_results.get("mean_time_s"),
                         "time_std_s": run_results.get("time_std_s", 0),
+                        "converged_runs": run_results.get("converged_runs", 0),
+                        "runs_count": training.num_runs,
                         "full_metrics": run_results.get("test_metrics", {}),
                     }
                 )
 
         summary_data_console = []
         for row in summary_data_full:
+            mean_time = row["mean_time_s"]
+            conv_time_str = (
+                f"{mean_time:.2f} ± {row['time_std_s']:.2f} ({row['converged_runs']}/{row['runs_count']})"
+                if mean_time is not None
+                else f"N/A (0/{row['runs_count']})"
+            )
             console_row = {
                 "Experiment": row["experiment"],
-                "Conv. Time, s": f"{row['mean_time_s']:.2f} ± {row['time_std_s']:.2f}",
+                "Conv. Time, s": conv_time_str,
             }
             for name, data in row["full_metrics"].items():
                 console_row[f"{name.capitalize()}, %"] = f"{data.get('mean', 0):.2f} ± {data.get('std', 0):.2f}"
@@ -258,5 +310,4 @@ class ExperimentRunner:
 
         generate_summary_table(summary_data_console)
         save_summary_to_csv(summary_data_full)
-
-        print("\nAll experiments were completed successfully.")
+        logger.info("All experiments completed successfully.")

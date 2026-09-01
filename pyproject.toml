@@ -15,6 +15,7 @@ dependencies = [
     "tabulate",
     "tqdm",
     "pyyaml",
+    "pydantic>=2.0",
     "pillow",
     "numpy",
     "seedbank",

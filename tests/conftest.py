@@ -1,10 +1,9 @@
-import yaml
+import numpy as np
+import pytest
 import torch
 import torch.nn as nn
-import numpy as np
+import yaml
 from torch.utils.data import DataLoader, TensorDataset
-
-import pytest
 
 from src.config import (
     DataConfig,
@@ -20,7 +19,6 @@ from src.config import (
     TunerConfig,
 )
 from src.models.simple_cnn import SimpleCNN
-
 
 NUM_CLASSES = 10
 IMAGE_SIZE = 32

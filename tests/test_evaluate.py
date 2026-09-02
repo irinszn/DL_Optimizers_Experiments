@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 from src.models.simple_cnn import SimpleCNN
 from src.training.evaluate import evaluate_model

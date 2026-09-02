@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 from src.config import SchedulerConfig, TrainingConfig
 from src.training.single_run import SingleRunResult, train_single_run
@@ -58,7 +58,9 @@ class TestTrainSingleRun:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         criterion = torch.nn.CrossEntropyLoss()
 
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device
+        )
         assert result.convergence_time is not None
         assert result.convergence_time >= 0
 
@@ -74,7 +76,9 @@ class TestTrainSingleRun:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         criterion = torch.nn.CrossEntropyLoss()
 
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device
+        )
         assert result.convergence_time is None
 
     def test_early_stopping_triggers(self, model, synthetic_dataloader, device):
@@ -89,7 +93,9 @@ class TestTrainSingleRun:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.0001)
         criterion = torch.nn.CrossEntropyLoss()
 
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device
+        )
         assert len(result.epoch_losses) <= 10
 
     def test_with_scheduler(self, model, synthetic_dataloader, device):
@@ -105,7 +111,9 @@ class TestTrainSingleRun:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
         criterion = torch.nn.CrossEntropyLoss()
 
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, config, device
+        )
         assert isinstance(result, SingleRunResult)
         assert len(result.epoch_losses) == 3
 
@@ -113,14 +121,18 @@ class TestTrainSingleRun:
         """Best epoch should be between 1 and the total number of epochs."""
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         criterion = torch.nn.CrossEntropyLoss()
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, training_config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, training_config, device
+        )
         assert 1 <= result.best_epoch <= training_config.epochs
 
     def test_val_metrics_history_has_all_keys(self, model, synthetic_dataloader, training_config, device):
         """Each epoch's validation metrics should contain accuracy, precision, recall, f1_score."""
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         criterion = torch.nn.CrossEntropyLoss()
-        result = train_single_run(model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, training_config, device)
+        result = train_single_run(
+            model, optimizer, criterion, synthetic_dataloader, synthetic_dataloader, training_config, device
+        )
         expected_keys = {"accuracy", "precision", "recall", "f1_score"}
         for epoch_metrics in result.val_metrics_history:
             assert expected_keys.issubset(epoch_metrics.keys())

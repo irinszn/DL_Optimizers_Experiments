@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 from src.data.noises import GaussianNoiseAdder, SaltAndPepperNoiseAdder
 
@@ -109,8 +109,8 @@ class TestSaltAndPepperNoiseAdder:
 
         num = int(amount * h * w)
         half = num // 2
-        salt_mask = (result[0] == 1.0)
-        pepper_mask = (result[0] == 0.0)
+        salt_mask = result[0] == 1.0
+        pepper_mask = result[0] == 0.0
         assert salt_mask.sum().item() == half
         assert pepper_mask.sum().item() == num - half
 

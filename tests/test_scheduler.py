@@ -1,7 +1,7 @@
 import warnings
 
-import torch
 import pytest
+import torch
 
 from src.config import SchedulerConfig
 from src.training.scheduler import build_scheduler

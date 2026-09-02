@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 from src.training.train import train_one_epoch
 

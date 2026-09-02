@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 from optuna.trial import FixedTrial
 
 from src.config import SchedulerConfig

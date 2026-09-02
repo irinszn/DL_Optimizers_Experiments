@@ -1,9 +1,9 @@
+import pytest
 import torch
 import torch.nn as nn
-import pytest
 
-from src.training.early_stopping import EarlyStopping
 from src.models.simple_cnn import SimpleCNN
+from src.training.early_stopping import EarlyStopping
 
 
 class TestEarlyStopping:

@@ -82,9 +82,7 @@ class TestRunComparativeRobustnessEvaluation:
     @patch("src.experiment.robustness.mlflow")
     @patch("src.experiment.robustness.find_best_model_uri")
     @patch("src.experiment.robustness.load_config")
-    def test_handles_failed_model_load(
-        self, mock_load_config, mock_find_uri, mock_mlflow, mock_eval, mock_dataloaders
-    ):
+    def test_handles_failed_model_load(self, mock_load_config, mock_find_uri, mock_mlflow, mock_eval, mock_dataloaders):
         """Failed model loading should skip evaluation without crashing."""
         config = MagicMock()
         config.mlflow.experiment_name = "test_{model_name}_{dataset_name}"

@@ -34,6 +34,7 @@ dev = [
     "hypothesis==6.115.6",
     "types-pyyaml>=6.0.12.20260408",
     "types-tabulate>=0.10.0.20260408",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.isort]
@@ -57,4 +58,5 @@ no_implicit_optional = "False"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = ["--color=yes", "-s"]

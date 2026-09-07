@@ -6,3 +6,6 @@ __pycache__/
 .hypothesis/
 .env/
 .venv/
+.coverage
+mlflow.db
+mlruns/

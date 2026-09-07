@@ -1,3 +1,4 @@
+import logging
 import os
 
 import numpy as np
@@ -147,19 +148,19 @@ class TestSaveSummaryToCsv:
 
 
 class TestGenerateSummaryTable:
-    def test_prints_table(self, capsys):
-        """Should print a formatted table with experiment data."""
+    def test_prints_table(self, caplog):
+        """Should log a formatted table with experiment data."""
         data = [
             {"Experiment": "SGD_no_noise", "Accuracy": "90.00 +/- 1.00"},
             {"Experiment": "Adam_no_noise", "Accuracy": "92.00 +/- 0.50"},
         ]
-        generate_summary_table(data)
-        captured = capsys.readouterr()
-        assert "FINAL SUMMARY TABLE" in captured.out
-        assert "SGD_no_noise" in captured.out
+        with caplog.at_level(logging.INFO):
+            generate_summary_table(data)
+        assert "FINAL SUMMARY TABLE" in caplog.text
+        assert "SGD_no_noise" in caplog.text
 
-    def test_empty_data(self, capsys):
-        """Empty data should still print the header."""
-        generate_summary_table([])
-        captured = capsys.readouterr()
-        assert "FINAL SUMMARY TABLE" in captured.out
+    def test_empty_data(self, caplog):
+        """Empty data should log a warning and no table."""
+        with caplog.at_level(logging.WARNING):
+            generate_summary_table([])
+        assert "no data" in caplog.text.lower()

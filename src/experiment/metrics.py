@@ -86,16 +86,19 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
 
 def generate_summary_table(data: list[dict]) -> None:
     """Prints the resulting pivot table to the console."""
-    print("\n\n" + "=" * 100)
-    print(" " * 40 + "FINAL SUMMARY TABLE")
-    print("=" * 100)
-
     if not data:
         logger.warning("There is no data to display in the summary.")
         return
 
     summary_df = pd.DataFrame(data)
-    print(tabulate(summary_df, headers="keys", tablefmt="grid", showindex=False, numalign="center", stralign="center"))
+    table = tabulate(summary_df, headers="keys", tablefmt="grid", showindex=False, numalign="center", stralign="center")
+    logger.info(
+        "\n\n%s\n%s\n%s\n%s",
+        "=" * 100,
+        " " * 40 + "FINAL SUMMARY TABLE",
+        "=" * 100,
+        table,
+    )
 
 
 def save_summary_to_csv(summary_data: list[dict], filename: str = "experiment_summary.csv") -> None:

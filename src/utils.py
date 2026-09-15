@@ -17,11 +17,19 @@ def setup_logging(level: int = logging.INFO, log_file: str = "experiment.log") -
     """
     fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
-    handlers: list[logging.Handler] = [
-        logging.StreamHandler(),
-        logging.FileHandler(log_file, encoding="utf-8"),
-    ]
-    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
+    formatter = logging.Formatter(fmt, datefmt=datefmt)
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
 
 
 def parse_scenario(name: str) -> tuple[str, float]:

@@ -10,12 +10,52 @@ import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import DataLoader, Subset, random_split
+from torchvision.datasets import CIFAR10
 from tqdm import tqdm
 
 from src.config import load_config
 from src.types import NoiseRegistry
 
 logger = logging.getLogger(__name__)
+
+CIFAR10_CLASSES = [
+    "airplane",
+    "automobile",
+    "bird",
+    "cat",
+    "deer",
+    "dog",
+    "frog",
+    "horse",
+    "ship",
+    "truck",
+]
+
+
+def prepare_cifar10(target_path: str) -> None:
+    """
+    Downloads CIFAR-10 via torchvision and saves it in ImageFolder format
+    (one subfolder per class with PNG images). Skips if target_path already exists.
+
+    Args:
+        target_path: Directory where the ImageFolder structure will be created.
+    """
+    if os.path.exists(target_path):
+        logger.info("CIFAR-10 dataset already prepared at '%s'. Skipping.", target_path)
+        return
+
+    logger.info("Downloading and preparing CIFAR-10 to '%s'...", target_path)
+
+    for split_name, train_flag in [("train", True), ("test", False)]:
+        dataset = CIFAR10(root="/tmp/cifar10_raw", train=train_flag, download=True)
+
+        for idx, (img, label) in enumerate(tqdm(dataset, desc=f"  CIFAR-10 {split_name}")):
+            class_name = CIFAR10_CLASSES[label]
+            class_dir = os.path.join(target_path, class_name)
+            os.makedirs(class_dir, exist_ok=True)
+            img.save(os.path.join(class_dir, f"{split_name}_{idx:05d}.png"))
+
+    logger.info("CIFAR-10 prepared: %s", target_path)
 
 
 def generate_noisy_datasets(
@@ -24,6 +64,7 @@ def generate_noisy_datasets(
     noise_scenarios: dict,
     noise_registry: NoiseRegistry,
     folder_template: str,
+    image_size: int = 128,
 ) -> None:
     """
     Generates noisy datasets from a clean image folder and saves them to disk.
@@ -35,6 +76,7 @@ def generate_noisy_datasets(
         noise_scenarios: Scenario configs, e.g. {'gaussian_0.05': [{'name': 'GaussianNoiseAdder', 'params': {...}}]}.
         noise_registry: Dict mapping noise class names to their classes.
         folder_template: Format string for subfolder names, e.g. 'Animals10_{scenario_name}'.
+        image_size: Target size for resizing images (square).
     """
     logger.info("Loading clean dataset from: %s", source_path)
     clean_data = torchvision.datasets.ImageFolder(root=source_path)
@@ -54,7 +96,12 @@ def generate_noisy_datasets(
 
         noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
         transform_pipeline = transforms.Compose(
-            [transforms.Resize((128, 128)), transforms.ToTensor(), *noise_transforms, transforms.ToPILImage()]
+            [
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                *noise_transforms,
+                transforms.ToPILImage(),
+            ]
         )
 
         os.makedirs(target_path, exist_ok=True)
@@ -67,7 +114,7 @@ def generate_noisy_datasets(
                 class_path = os.path.join(target_path, class_name)
                 os.makedirs(class_path, exist_ok=True)
 
-                img_name = os.path.basename(img_path)
+                img_name = os.path.splitext(os.path.basename(img_path))[0] + ".png"
                 processed_img.save(os.path.join(class_path, img_name))
 
             except Exception as e:
@@ -94,6 +141,7 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
     root_path = config.data.preprocessed_root_path
     folder_template = config.data.scenario_folder_template
     noise_scenarios = config.grid_search.noise_scenarios
+    image_size = config.data.image_size
 
     logger.info("Loading clean dataset from: %s", source_path)
     clean_data = torchvision.datasets.ImageFolder(root=source_path)
@@ -118,7 +166,12 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
 
         noise_transforms = [noise_registry[n.name](**n.params) for n in noise_config]
         transform_pipeline = transforms.Compose(
-            [transforms.Resize((128, 128)), transforms.ToTensor(), *noise_transforms, transforms.ToPILImage()]
+            [
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                *noise_transforms,
+                transforms.ToPILImage(),
+            ]
         )
 
         for img_path, label_idx in tqdm(clean_data.imgs, desc=f"  Scenario {scenario_name}"):
@@ -130,7 +183,7 @@ def generate_datasets_on_drive(config_path: str, noise_registry: NoiseRegistry) 
                 local_class_path = os.path.join(local_temp, class_name)
                 os.makedirs(local_class_path, exist_ok=True)
 
-                img_name = os.path.basename(img_path)
+                img_name = os.path.splitext(os.path.basename(img_path))[0] + ".png"
                 processed_img.save(os.path.join(local_class_path, img_name))
 
             except Exception as e:

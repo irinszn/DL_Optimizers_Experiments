@@ -101,13 +101,13 @@ def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name
         child_runs = client.search_runs(
             experiment_ids=[experiment.experiment_id],
             filter_string=f"tags.mlflow.parentRunId = '{run_id}'",
-            order_by=["metrics.final_val_accuracy DESC"],
+            order_by=["metrics.best_val_accuracy DESC"],
             max_results=1,
         )
 
         if child_runs:
             best_child = child_runs[0]
-            child_acc = best_child.data.metrics.get("final_val_accuracy", 0)
+            child_acc = best_child.data.metrics.get("best_val_accuracy", 0)
             if child_acc > 0:
                 logger.info(
                     "Found valid Child Run (ID: %s) in Parent (%s). Val Acc: %.2f%%",
@@ -115,7 +115,7 @@ def find_best_model_uri(experiment_name: str, optimizer_name: str, scenario_name
                     run_id,
                     child_acc,
                 )
-                return f"runs:/{best_child.info.run_id}/final_model"
+                return f"runs:/{best_child.info.run_id}/best_epoch_model"
 
     logger.warning("Could not find any valid model for '%s'.", parent_run_name)
     return None

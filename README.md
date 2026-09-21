@@ -2,7 +2,7 @@
 
 An experimental study comparing the **accuracy and robustness** of three optimization algorithms — **SGD**, **Adam**, and **LAMB** — under noisy data conditions. The goal is to determine which optimization strategy better maintains CNN accuracy when trained on data with different types and levels of distortion.
 
-Experiments are conducted on the [Animals-10](https://www.kaggle.com/datasets/alessiocorrado99/animals10) dataset with artificially introduced **Gaussian** and **Salt & Pepper** noise at varying intensities. Models are evaluated using **Accuracy**, **Precision**, **Recall**, **F1-score**, and **convergence time**.
+Experiments are conducted on the [Animals-10](https://www.kaggle.com/datasets/alessiocorrado99/animals10) and [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) datasets with artificially introduced **Gaussian** and **Salt & Pepper** noise at varying intensities. Models are evaluated using **Accuracy**, **Precision**, **Recall**, **F1-score**, and **convergence time**.
 
 ---
 
@@ -51,9 +51,14 @@ DL_Optimizers_Experiments/
 
 ### Data Preparation
 
-Noisy datasets are generated **once in advance** and saved to disk. For each noise scenario, every image from the clean dataset is transformed (resized to 128x128, noise applied) and stored as a separate folder. Generation is **idempotent** — existing folders are skipped. This ensures all optimizers and all runs train on exactly the same images.
+Noisy datasets are generated **once in advance** and saved to disk as **PNG** (lossless, to preserve exact noise levels). For each noise scenario, every image from the clean dataset is transformed (resized to `image_size × image_size`, noise applied in [0, 1] range, then saved) and stored as a separate folder. Generation is **idempotent** — existing folders are skipped. This ensures all optimizers and all runs train on exactly the same images.
 
-The dataset is split into **train / val / test** (80/20, then train+val 85/15) with a fixed seed (`SPLIT_RANDOM_STATE = 42`) — all optimizers see identical data partitions.
+**Data splitting** depends on the dataset:
+
+- **Animals-10** (no official split): the full dataset is split into **train / val / test** (80/20, then train+val 85/15) with a fixed seed (`SPLIT_RANDOM_STATE = 42`)
+- **CIFAR-10** (official split): the official **10,000 test images** are used as-is, and the 50,000 training images are split into **train / val** (45,000 / 5,000) — results are directly comparable with the literature
+
+The split structure is auto-detected: if the preprocessed scenario folder contains `train/` and `test/` subdirectories, the official split is used; otherwise, a random split is applied.
 
 The study evaluates optimizers in **two complementary scenarios**:
 
@@ -141,14 +146,15 @@ mlflow:
   experiment_name: "{model_name}_{dataset_name}"
 
 data:
-  dataset_name: "Animals10"
+  dataset_name: "Animals10"             # or "CIFAR10"
   clean_data_path: "path/to/raw/data"
   preprocessed_root_path: "path/to/preprocessed/data"
   scenario_folder_template: "Animals10_{scenario_name}"
   num_classes: 10
+  image_size: 128           # 128 for Animals-10, 32 for CIFAR-10
   num_workers: 2
-  pin_memory: false       # set to true on GPU
-  debug_subset_size: 100  # use a small subset for quick test runs (remove for full run)
+  pin_memory: false         # set to true on GPU
+  debug_subset_size: 100    # use a small subset for quick test runs (remove for full run)
 
 model:
   name: "SimpleCNN"
@@ -220,13 +226,21 @@ Config is validated at startup via Pydantic — missing or mistyped fields (incl
 ### Locally / on a server
 
 ```bash
-# Full pipeline: generate noisy datasets + experiments + robustness
-python run.py --config configs/your_config.yaml --mode all
+# Animals-10
+uv run python run.py --config configs/local_config.yaml --mode all
+
+# CIFAR-10 (auto-downloads the dataset on first run)
+uv run python run.py --config configs/cifar10_config.yaml --mode all
 
 # Individual stages
-python run.py --mode generate      # Generate noisy datasets (idempotent, skips existing)
-python run.py --mode experiments   # Scenario 1: train on each noise level, test on same noise
-python run.py --mode robustness    # Scenario 2: evaluate clean-trained models on all noise levels
+uv run python run.py --config configs/your_config.yaml --mode generate      # Generate noisy datasets (idempotent, skips existing)
+uv run python run.py --config configs/your_config.yaml --mode experiments   # Scenario 1: train on each noise level, test on same noise
+uv run python run.py --config configs/your_config.yaml --mode robustness    # Scenario 2: evaluate clean-trained models on all noise levels
+```
+
+CIFAR-10 is downloaded automatically via torchvision on first run. If SSL certificate errors occur, fix with:
+```bash
+export SSL_CERT_FILE=$(python -c "import certifi; print(certifi.where())")
 ```
 
 ### Google Colab
@@ -235,7 +249,7 @@ Open `experiment_notebooks/example.ipynb`. The notebook covers:
 
 1. Clone the repo and install dependencies
 2. Connect Google Drive and MLflow
-3. Download Animals-10 from Kaggle
+3. Download Animals-10 from Kaggle (or use CIFAR-10 config for automatic download)
 4. Generate noisy datasets (writes to local SSD first, then copies to Drive)
 5. (Optional) Run Optuna hyperparameter tuning
 6. Run experiments and robustness evaluation
@@ -257,11 +271,43 @@ SGD_no_noise (parent)
 
 **Child runs**: per-epoch `val_accuracy`, `val_f1_score`, `epoch_loss`, `convergence_time`, `best_epoch`, test metrics.
 
+### Viewing results
+
+Experiments are stored locally in `mlflow.db` (SQLite) and `mlruns/` (artifacts). To browse results in the web UI:
+
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+Then open http://127.0.0.1:5000 in a browser. If running on a remote server:
+
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000
+```
+
+To extract results programmatically (e.g. for plotting):
+
+```python
+import mlflow
+
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
+runs = mlflow.search_runs(experiment_names=["SimpleCNN_CIFAR10_tuned"])
+```
+
+### Output files
+
+| File | Contents |
+|------|----------|
+| `mlflow.db` + `mlruns/` | Full experiment data: all metrics, parameters, models |
+| `experiment_summary.csv` | Aggregated results: mean/std/CI95 per optimizer × scenario |
+| `comparative_robustness_evaluation.csv` | Cross-scenario robustness matrix |
+| `experiment.log` | Text log of the run |
+
 ---
 
 ## Reproducibility
 
-- Train/val/test split is fixed via `SPLIT_RANDOM_STATE = 42` — identical across all optimizer runs
+- Train/val/test split is fixed via `SPLIT_RANDOM_STATE = 42` — identical across all optimizer runs (CIFAR-10 uses the official test set; Animals-10 uses a random split)
 - Each of the `num_runs` runs uses a different randomly generated seed, logged to MLflow
 - The same seed sequence is reused for every `(optimizer, scenario)` combination
 - `torch.backends.cudnn.deterministic = True` is set when CUDA is available

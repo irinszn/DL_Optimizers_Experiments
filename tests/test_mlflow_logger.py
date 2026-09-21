@@ -192,12 +192,12 @@ class TestFindBestModelUri:
 
         child_run = MagicMock()
         child_run.info.run_id = "child1"
-        child_run.data.metrics = {"final_val_accuracy": 90.0}
+        child_run.data.metrics = {"best_val_accuracy": 90.0}
 
         client.search_runs.side_effect = [[parent_run], [child_run]]
 
         result = find_best_model_uri("exp", "SGD", "no_noise")
-        assert result == "runs:/child1/final_model"
+        assert result == "runs:/child1/best_epoch_model"
 
 
 class TestPrintAggregatedSummary:

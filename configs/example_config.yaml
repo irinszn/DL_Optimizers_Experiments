@@ -7,6 +7,7 @@ data:
   preprocessed_root_path: "path/to/preprocessed/data"  # Where to save noisy datasets
   scenario_folder_template: "YourDataset_{scenario_name}" # Template for noisy dataset folder names
   num_classes: 10                                       # Number of classes in the dataset
+  image_size: 128                                        # Target image size (square), e.g. 128 for Animals10, 32 for CIFAR10
   num_workers: 2                                         # Number of DataLoader worker processes
   pin_memory: false                                      # Set to true if running on GPU
   debug_subset_size: 100                                 # For quick test runs (can be removed)

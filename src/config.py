@@ -14,6 +14,7 @@ class DataConfig(BaseModel):
     preprocessed_root_path: str
     scenario_folder_template: str
     num_classes: int
+    image_size: int = 128
     num_workers: int = 2
     pin_memory: bool = False
     debug_subset_size: int | None = None

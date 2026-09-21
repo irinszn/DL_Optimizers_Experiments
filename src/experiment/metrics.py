@@ -50,7 +50,7 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
             if values:
                 aggregated_results["validation_metrics"][key] = {
                     "mean": np.mean(values),
-                    "std": np.std(values) if num_runs > 1 else 0.0,
+                    "std": np.std(values, ddof=1) if num_runs > 1 else 0.0,
                 }
 
     test_metrics: list[dict[str, float]] = [run["metrics"] for run in run_results_list if run.get("metrics")]
@@ -71,7 +71,7 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
                 "mean": mean_val,
                 "ci_95_lower": max(0, ci_95[0]),
                 "ci_95_upper": ci_95[1],
-                "std": np.std(values) if num_runs > 1 else 0.0,
+                "std": np.std(values, ddof=1) if num_runs > 1 else 0.0,
                 "formatted": f"{mean_val:.2f} ({max(0, ci_95[0]):.2f}, {ci_95[1]:.2f})",
             }
 
@@ -79,7 +79,7 @@ def calculate_aggregated_metrics(run_results_list: list[dict[str, Any]]) -> dict
     aggregated_results["converged_runs"] = len(times)
     if times:
         aggregated_results["mean_time_s"] = np.mean(times)
-        aggregated_results["time_std_s"] = np.std(times) if len(times) > 1 else 0.0
+        aggregated_results["time_std_s"] = np.std(times, ddof=1) if len(times) > 1 else 0.0
 
     return aggregated_results
 

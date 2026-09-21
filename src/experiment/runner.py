@@ -249,7 +249,8 @@ class ExperimentRunner:
 
         # Experiment phase
         criterion = self._get_criterion()
-        run_seeds = np.random.randint(0, 2**32 - 1, size=training.num_runs)
+        seed_rng = np.random.default_rng(SPLIT_RANDOM_STATE)
+        run_seeds = seed_rng.integers(0, 2**32 - 1, size=training.num_runs)
         logger.info("Generated seeds: %s", run_seeds)
 
         summary_data_full = []

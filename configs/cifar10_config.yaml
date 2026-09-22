@@ -1,0 +1,113 @@
+mlflow:
+  # Для режима без тюнинга поменять суффикс на _default,
+  # чтобы два режима не смешивались в одном эксперименте MLflow
+  experiment_name: "{model_name}_{dataset_name}_tuned"
+
+data:
+  dataset_name: "CIFAR10"
+  clean_data_path: "datasets/cifar-10"
+  preprocessed_root_path: "datasets/preprocessed"
+  scenario_folder_template: "CIFAR10_{scenario_name}"
+  num_classes: 10
+  image_size: 32
+  num_workers: 4          # на сервере можно больше, по числу ядер
+  pin_memory: true        # на GPU включаем
+  #debug_subset_size: 50 # раскомментировать только для смоук-теста
+
+model:
+  name: "SimpleCNN"
+  params:
+    num_classes: 10
+
+training:
+  epochs: 30              # как в статье
+  batch_size: 128         # стандарт для CIFAR
+  target_loss: 0.4
+  criterion: "CrossEntropyLoss"
+  num_runs: 5
+  save_model_mode: "best"
+  early_stopping_patience: 0      # ранняя остановка выключена, лучшая эпоха всё равно сохраняется
+  early_stopping_metric: "accuracy"
+  scheduler:
+    name: "constant"      # один для всех оптимизаторов
+    warmup_ratio: 0.0
+    min_lr_ratio: 0.1
+  use_tuner: true
+  tuner:
+    n_trials: 30
+    timeout: null
+    tune_scenarios:
+      - "no_noise"
+      - "gaussian_0.04"
+      - "gaussian_0.08"
+      - "gaussian_0.10"
+      - "salt_pepper_0.01"
+      - "salt_pepper_0.03"
+      - "salt_pepper_0.07"
+
+robustness:
+  trained_on_scenario: "no_noise"
+
+grid_search:
+  optimizers:
+    # params используются в режиме без тюнинга.
+    # weight_decay одинаковый у всех, чтобы дефолтный режим был симметричным.
+    - name: "SGD"
+      params:
+        lr: 0.01
+        momentum: 0.9
+        nesterov: true
+        weight_decay: 0.0001
+      search_space:
+        lr_log10: [-4, -0.5]
+        momentum: [0.5, 0.99]
+        wd_log10: [-6, -3.3]
+    - name: "Adam"
+      params:
+        lr: 0.001
+        weight_decay: 0.0001
+      search_space:
+        lr_log10: [-5, -2]
+        beta1: [0.8, 0.99]
+        beta2: [0.9, 0.999]
+        wd_log10: [-6, -3]
+    - name: "LAMB"
+      params:
+        lr: 0.003
+        weight_decay: 0.0001
+      search_space:
+        lr_log10: [-4, -1]
+        beta1: [0.8, 0.99]
+        beta2: [0.9, 0.999]
+        wd_log10: [-5, -2]
+
+  # Уровни шума = severity 1, 3, 5 из CIFAR-10-C
+  noise_scenarios:
+    no_noise: []
+    gaussian_0.04:
+      - name: "GaussianNoiseAdder"
+        params:
+          mean: 0.0
+          std: 0.04
+    gaussian_0.08:
+      - name: "GaussianNoiseAdder"
+        params:
+          mean: 0.0
+          std: 0.08
+    gaussian_0.10:
+      - name: "GaussianNoiseAdder"
+        params:
+          mean: 0.0
+          std: 0.10
+    salt_pepper_0.01:
+      - name: "SaltAndPepperNoiseAdder"
+        params:
+          amount: 0.01
+    salt_pepper_0.03:
+      - name: "SaltAndPepperNoiseAdder"
+        params:
+          amount: 0.03
+    salt_pepper_0.07:
+      - name: "SaltAndPepperNoiseAdder"
+        params:
+          amount: 0.07
